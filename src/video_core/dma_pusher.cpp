@@ -453,6 +453,10 @@ void DmaPusher::FlushGpuWrittenCommands(GPUVAddr address, size_t size) {
     if (!Tegra::g_nx2_ampere.load(std::memory_order_relaxed) || size == 0) {
         return;
     }
+    // Pending dispatches must mark their written pages before this lookup.
+    if (VideoCommon::GpuSplit::Get().Active()) {
+        VideoCommon::GpuSplit::Get().Drain();
+    }
     bool written = false;
     for (GPUVAddr page = address & ~GPUVAddr{0xfff}; page < address + size; page += 0x1000) {
         if (const auto device = memory_manager.GpuToCpuAddress(page);
@@ -464,9 +468,6 @@ void DmaPusher::FlushGpuWrittenCommands(GPUVAddr address, size_t size) {
     if (!written) {
         return;
     }
-    // The caches belong to the split's back: it first runs what the front queued (the dispatch
-    // that writes these words among it).
-    VideoCommon::GpuSplit::Get().Drain();
     if (memory_manager.IsMemoryDirty(address, size, VideoCommon::CacheType::BufferCache)) {
         memory_manager.FlushRegion(address, size, VideoCommon::CacheType::BufferCache);
     }
