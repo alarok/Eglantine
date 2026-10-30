@@ -36,6 +36,7 @@
 #include "install_dialog.h"
 
 #include "bootmanager.h"
+#include "controller_api.h"
 #include "loading_screen.h"
 #include "qt_common/util/vk.h"
 #include "ryujinx_dialog.h"
@@ -359,6 +360,8 @@ inline static bool isDarkMode() {
 MainWindow::MainWindow(bool has_broken_vulkan)
     : ui{std::make_unique<Ui::MainWindow>()},
       input_subsystem{std::make_shared<InputCommon::InputSubsystem>()}, user_data_migrator{this} {
+    const bool control_api_enabled =
+        qEnvironmentVariable("EGLANTINE_CONTROL_API") == QLatin1String{"1"};
     QtCommon::Init(this);
 
     Common::FS::CreateEdenPaths();
@@ -445,8 +448,14 @@ MainWindow::MainWindow(bool has_broken_vulkan)
     // Setup content providers.
     QtCommon::SetupContentProviders();
 
-    // Gen keys if necessary
-    OnCheckFirmwareDecryption();
+    if (control_api_enabled && !ContentManager::AreKeysPresent()) {
+        LOG_WARNING(Frontend,
+                    "Decryption keys are missing; encrypted games still require valid keys");
+        SetFirmwareVersion();
+        UpdateMenuState();
+    } else {
+        OnCheckFirmwareDecryption();
+    }
 
 #ifdef __unix__
     OnCheckGraphicsBackend();
@@ -516,6 +525,10 @@ MainWindow::MainWindow(bool has_broken_vulkan)
     // to prevent the UI from blowing up.
     UpdateUITheme();
 
+    if (control_api_enabled) {
+        controller_api = std::make_unique<ControllerApi>(*QtCommon::system, *input_subsystem, this);
+    }
+
     if (QStringList args = QApplication::arguments(); args.size() >= 2) {
         QList<QByteArray> qba{};
         for (auto const& e : args)
@@ -549,6 +562,7 @@ MainWindow::MainWindow(bool has_broken_vulkan)
 }
 
 MainWindow::~MainWindow() {
+    controller_api.reset();
     // will get automatically deleted otherwise
     if (render_window->parent() == nullptr) {
         delete render_window;
@@ -2047,6 +2061,9 @@ void MainWindow::BootGame(const QString& filename, Service::AM::FrontendAppletPa
     loading_screen->show();
 
     emulation_running = true;
+    if (controller_api) {
+        controller_api->SetGameActive(true);
+    }
     if (ui->action_Fullscreen->isChecked()) {
         ShowFullscreen();
     } else {
@@ -2066,6 +2083,9 @@ void MainWindow::BootGameFromList(const QString& filename, StartGameType with_co
 bool MainWindow::OnShutdownBegin() {
     if (!emulation_running) {
         return false;
+    }
+    if (controller_api) {
+        controller_api->SetGameActive(false);
     }
 
     if (ui->action_Fullscreen->isChecked()) {
@@ -2132,6 +2152,9 @@ void MainWindow::OnEmulationStopTimeExpired() {
 }
 
 void MainWindow::OnEmulationStopped() {
+    if (controller_api) {
+        controller_api->SetGameActive(false);
+    }
     shutdown_timer.stop();
     if (QtCommon::emu_thread) {
         QtCommon::emu_thread->disconnect();
@@ -3031,6 +3054,9 @@ void MainWindow::OnRestartGame() {
 }
 
 void MainWindow::OnPauseGame() {
+    if (controller_api) {
+        controller_api->Neutralize();
+    }
     QtCommon::emu_thread->SetRunning(false);
     play_time_manager->Stop();
     UpdateMenuState();
@@ -4210,6 +4236,9 @@ void MainWindow::UpdateStatusBar() {
         tas_label->clear();
 
     auto results = QtCommon::system->GetAndResetPerfStats();
+    if (controller_api) {
+        controller_api->SetPerformanceSample(results.average_game_fps, results.frametime * 1000.0);
+    }
     auto& shader_notify = QtCommon::system->GPU().ShaderNotify();
     const int shaders_building = shader_notify.ShadersBuilding();
 
@@ -4561,6 +4590,9 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     if (!ConfirmClose()) {
         event->ignore();
         return;
+    }
+    if (controller_api) {
+        controller_api->Stop();
     }
 
     UpdateUISettings();

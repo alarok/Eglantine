@@ -1,0 +1,34 @@
+{
+  "source_commit": "2da792dc2462a91490b7a638fcdc8ae4c1919f95",
+  "binary_sha256": "b74a65441ce70f53b3cbd91495bd86c04c38a0af49e15ec09ffa8ab8b745e545",
+  "build_context": "Windows integration candidate with additional renderer candidates",
+  "program_id": "0400c3f00006e000",
+  "scene": "Main menu",
+  "visual_check": {
+    "buttons": ["DOWN"],
+    "duration_ms": 400,
+    "selected_entry_before": 1,
+    "selected_entry_after": 3,
+    "key_repeat_observed": true,
+    "keyboard_input_used": false,
+    "before": "docs/images/controller-api/menu-before.png",
+    "after": "docs/images/controller-api/menu-after.png"
+  },
+  "live_host_checks": {
+    "identity_and_process": true,
+    "renewal_survives_previous_expiration": true,
+    "invalid_requests_preserve_prior_state": true,
+    "expiration_releases_input": true,
+    "disconnect_releases_before_requested_expiration": true,
+    "malformed_prefix_discards_queued_command": true,
+    "oversized_request_closes_connection": true
+  },
+  "not_verified": [
+    "Pause cleanup",
+    "Program-change cleanup",
+    "Complete backend callback sequence",
+    "Race gameplay",
+    "Performance gain"
+  ],
+  "text_rendering": "Labels remain missing in the isolated integration profile. Upstream PR #56 is included."
+}
