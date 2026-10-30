@@ -19,7 +19,11 @@ Reply to Deku in clear Spanish from Spain.
 - Use `gh-alarok` for this fork. Use `gh-deku` for the primary account.
 - The wrappers are in `C:/Users/Usuario/.local/bin`.
 - Both wrappers use the portable GitHub CLI at `C:/Users/Usuario/Tools/GitHubCLI/2.103.3/bin/gh.exe`.
-- The secondary configuration directory is `C:/Users/Usuario/AppData/Roaming/GitHub CLI-alarok-eglantine`.
+- The secondary configuration directory is `C:/Users/Usuario/.config/gh-alarok`.
+- The Eglantine Git credential helper uses that same shared directory.
+- Keep shared configuration outside `AppData`.
+- Codex's MSIX environment can redirect `AppData` writes into its package `LocalCache`.
+- Other programs can see a different directory at the same apparent `AppData` path.
 - Credentials remain in Windows Credential Manager. Do not create global token environment variables.
 - Secondary authentication changes restore the primary account's legacy credential.
 - The old system `gh` can read that legacy credential. Use the account wrappers.
@@ -34,8 +38,9 @@ Check the live account before a remote change:
 Expect `alarok` and `deku-95`, respectively.
 Cloning with an account does not select the account for later pushes.
 Check the repository's Git credential helper separately before a push.
-Do not infer account identity from old notes or a missing-folder claim.
-Compare the host, wrapper path, and live API result when agents report different accounts.
+Do not infer account identity from old notes.
+Investigate directory visibility when agents report different accounts or missing configuration.
+Compare the host, wrapper path, and live API result in each affected program.
 Never print tokens or copy credentials into repository files.
 
 ## Branches and pull requests
