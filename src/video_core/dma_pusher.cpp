@@ -109,7 +109,35 @@ bool DmaPusher::Step() {
             if (kepler_payload || macro_payload) {
                 const size_t words = std::min<size_t>(dma_state.method_count, header.size);
                 auto* const engine_state = subchannels[dma_state.subchannel];
-                if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
+                // Parameters continued in an entry of their own can be arguments the GPU wrote
+                // (Donkey Kong Bananza's terrain: the culling pass counts each mesh's triangles
+                // into a 5-word indirect draw record and the colour pass draws with it). Read
+                // without a flush, the macro sees the older guest words (a zero count, so the
+                // terrain is never drawn). EDEN_NX2_PBFLUSH=0 turns this off.
+                static const bool flush_parameters = [] {
+                    const char* value = std::getenv("EDEN_NX2_PBFLUSH");
+                    return value == nullptr || value[0] != '0';
+                }();
+                bool flushed_parameters = false;
+                if (flush_parameters && words <= 64) {
+                    if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
+                        split.Drain();
+                    }
+                    const GPUVAddr address = dma_state.dma_get;
+                    const size_t bytes = words * sizeof(u32);
+                    if (memory_manager.IsMemoryDirty(address, bytes, VideoCommon::CacheType::BufferCache)) {
+                        memory_manager.FlushRegion(address, bytes, VideoCommon::CacheType::BufferCache);
+                        flushed_parameters = true;
+                        static std::atomic<u32> flush_logs{};
+                        if (flush_logs.fetch_add(1) < 20) {
+                            LOG_INFO(HW_GPU, "Macro parameters at {:#x} ({} words) were written by the GPU: flushed",
+                                     address, words);
+                        }
+                    }
+                }
+                if (flushed_parameters) {
+                    engine_state->current_dirty = false;
+                } else if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
                     // The caches behind IsMemoryDirty belong to the split's back thread.
                     split.Defer([engine_state, memory = &memory_manager, address = GPUVAddr{dma_state.dma_get},
                                  bytes = words * sizeof(u32)] {
