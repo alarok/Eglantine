@@ -22,9 +22,11 @@ The workflow checks the active rules for both build contexts and strict mode.
 Enable auto-merge in the repository settings. Enable Actions to create pull
 requests. The workflow uses the repository `GITHUB_TOKEN`; it needs no PAT.
 
-Merging an update into `nx2` starts the existing release workflow. That
-workflow publishes a prerelease after both platform builds pass.
-The sync workflow dispatches its own validation build with publication off.
+Pushes and merges made with a user token start the existing release workflow.
+That workflow publishes a prerelease after both platform builds pass.
+The sync uses `GITHUB_TOKEN`, which does not start another workflow after its merge.
+The sync dispatches its own validation build with publication disabled.
+Start a release manually when needed.
 
 If a merge conflict occurs, read the failed sync run and resolve the conflict
 on a local branch. Do not edit the reserved bot branch. Open a pull request
