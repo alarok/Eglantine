@@ -11,6 +11,7 @@ ROOT_DOCUMENTS = {
     "README.md",
 }
 DOCUMENT_EXTENSIONS = {".md", ".markdown", ".rst"}
+BUILD_WORKFLOW = ".github/workflows/release-binaries.yml"
 
 
 def changed_paths(base, head, cwd=None):
@@ -39,6 +40,8 @@ def is_docs_or_ci_path(path):
         raise ValueError("Git returned a malformed repository path")
     if path.startswith("docs/") or path.startswith("tools/ci/") or path.startswith("tests/ci/"):
         return True
+    if path == BUILD_WORKFLOW:
+        return False
     if path.startswith(".github/workflows/"):
         return path.endswith((".yml", ".yaml"))
     return path in ROOT_DOCUMENTS or path.rsplit("/", 1)[-1].lower().endswith(tuple(DOCUMENT_EXTENSIONS))
