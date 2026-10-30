@@ -15,6 +15,8 @@ The primary account remains `deku-95`, selected through `gh-deku`.
 The old system `gh` does not reliably select the secondary account.
 Check live wrapper results before requesting another login.
 Git uses its repository credential helper separately from the GitHub CLI account.
+Both secondary paths must select `C:/Users/Usuario/.config/gh-alarok`.
+Keep shared configuration outside `AppData`; Codex's MSIX redirection can hide those files from Claude.
 
 Write new technical text and commits in clear English with ASD-STE100 sentence limits.
 Use Spanish from Spain when speaking to Deku.
