@@ -11,12 +11,14 @@ One pull request tracks the updates. The workflow builds Windows and Linux.
 The builds do not run project tests or verify game behavior.
 The workflow enables automatic merge after both builds pass.
 
-Protect `nx2` before using automatic merge. Require these checks and require
-the branch to be up to date. Allow merge commits:
+Add an active `nx2` ruleset before using automatic merge. Require pull
+requests, current checks, no force pushes, and no branch deletion. Add no
+bypass actors. Allow merge commits:
 
 - `linux-x86_64 binary`
 - `windows-x86_64 binary`
 
+The workflow checks the active rules for both build contexts and strict mode.
 Enable auto-merge in the repository settings. Enable Actions to create pull
 requests. The workflow uses the repository `GITHUB_TOKEN`; it needs no PAT.
 

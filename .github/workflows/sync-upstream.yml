@@ -195,27 +195,38 @@ jobs:
         run: |
           set -euo pipefail
 
-          protection="$RUNNER_TEMP/branch-protection.json"
-          if ! gh api "repos/$GH_REPO/branches/nx2/protection" > "$protection"; then
-            echo '::error title=Branch protection required::Protect nx2 and require both release-binaries build checks.'
+          rules="$RUNNER_TEMP/branch-rules.json"
+          if ! gh api "repos/$GH_REPO/rules/branches/nx2" > "$rules"; then
+            echo '::error title=Branch rules required::Add an active nx2 ruleset with strict Linux and Windows release build checks.'
             exit 1
           fi
 
-          if ! python - "$protection" <<'PY'
+          if ! python - "$rules" <<'PY'
           import json
           import sys
 
           with open(sys.argv[1], encoding="utf-8") as source:
               rules = json.load(source)
-          required = rules.get("required_status_checks") or {}
-          names = {item.get("context") for item in required.get("checks", [])}
-          names.update(required.get("contexts", []))
+          types = {rule.get("type") for rule in rules}
+          checks = set()
+          strict = False
+          for rule in rules:
+              if rule.get("type") != "required_status_checks":
+                  continue
+              parameters = rule.get("parameters") or {}
+              checks.update(
+                  item.get("context")
+                  for item in parameters.get("required_status_checks", [])
+                  if item.get("context")
+              )
+              strict = strict or parameters.get("strict_required_status_checks_policy") is True
           expected = {"linux-x86_64 binary", "windows-x86_64 binary"}
-          if not required.get("strict") or not expected.issubset(names):
-              raise SystemExit("nx2 must require current Linux and Windows release build checks")
+          expected_rules = {"deletion", "non_fast_forward", "pull_request", "required_status_checks"}
+          if not expected_rules.issubset(types) or not strict or not expected.issubset(checks):
+              raise SystemExit("nx2 must require pull requests, no force pushes or deletion, and current Linux and Windows release builds")
           PY
           then
-            echo '::error title=Required build checks missing::Configure strict nx2 protection with linux-x86_64 binary and windows-x86_64 binary checks.'
+            echo '::error title=Branch rules missing::Require pull requests, no force pushes or deletion, and strict Linux and Windows build checks on nx2.'
             exit 1
           fi
 
