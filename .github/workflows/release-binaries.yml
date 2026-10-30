@@ -23,7 +23,58 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  workflow-validation:
+    name: Workflow and CI validation
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Lint GitHub workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' workflow_files < <(find .github/workflows -maxdepth 1 -type f \
+            \( -name '*.yml' -o -name '*.yaml' \) -print0)
+          if [[ "${#workflow_files[@]}" -eq 0 ]]; then
+            echo 'No GitHub workflow YAML files were found.'
+            exit 1
+          fi
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 "${workflow_files[@]}"
+
+      - name: Test the pull request classifier
+        run: python -B -m unittest discover -s tests/ci -p 'test_*.py' -v
+
+  classify:
+    name: Classify pull request changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      full_build: ${{ steps.classify.outputs.full_build }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Classify changed paths
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python tools/ci/classify_pr_changes.py "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: classify
+    if: >-
+      ${{ always() && (
+        github.event_name != 'pull_request' ||
+        (needs.classify.result == 'success' && needs.classify.outputs.full_build == 'true')
+      ) }}
     name: ${{ matrix.platform }} binary
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -206,12 +257,75 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-  # Publishes both binaries as a GitHub pre-release once every platform built: on pushes to nx2
-  # and nx2-experimental, and on manual runs unless "Publish the binaries as a GitHub release" is
-  # unticked.
+  required-validation:
+    name: Required validation
+    if: always()
+    needs:
+      - workflow-validation
+      - classify
+      - build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check required job results
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          VALIDATION_RESULT: ${{ needs.workflow-validation.result }}
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          FULL_BUILD: ${{ needs.classify.outputs.full_build }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$VALIDATION_RESULT" != 'success' ]]; then
+            echo "Workflow and CI validation ended with: $VALIDATION_RESULT"
+            exit 1
+          fi
+
+          if [[ "$EVENT_NAME" == 'pull_request' ]]; then
+            if [[ "$CLASSIFY_RESULT" != 'success' ]]; then
+              echo "Pull request classification ended with: $CLASSIFY_RESULT"
+              exit 1
+            fi
+            case "$FULL_BUILD" in
+              true)
+                [[ "$BUILD_RESULT" == 'success' ]] || {
+                  echo "Required platform builds ended with: $BUILD_RESULT"
+                  exit 1
+                }
+                ;;
+              false)
+                [[ "$BUILD_RESULT" == 'skipped' ]] || {
+                  echo "Documentation validation expected skipped builds but got: $BUILD_RESULT"
+                  exit 1
+                }
+                ;;
+              *)
+                echo 'Pull request classification returned an unknown result.'
+                exit 1
+                ;;
+            esac
+          elif [[ "$EVENT_NAME" == 'push' || "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            [[ "$CLASSIFY_RESULT" == 'skipped' ]] || {
+              echo "Unexpected classification result: $CLASSIFY_RESULT"
+              exit 1
+            }
+            [[ "$BUILD_RESULT" == 'success' ]] || {
+              echo "Required platform builds ended with: $BUILD_RESULT"
+              exit 1
+            }
+          else
+            echo "Unsupported event: $EVENT_NAME"
+            exit 1
+          fi
+
+  # Publishes both binaries on user pushes and manual runs when publication is enabled.
   release:
     name: Publish release
-    needs: build
+    needs:
+      - build
+      - required-validation
     if: github.event_name == 'push' || inputs.publish_release
     runs-on: ubuntu-24.04
     permissions:

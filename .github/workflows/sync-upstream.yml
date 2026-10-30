@@ -220,7 +220,7 @@ jobs:
                   if item.get("context")
               )
               strict = strict or parameters.get("strict_required_status_checks_policy") is True
-          expected = {"linux-x86_64 binary", "windows-x86_64 binary"}
+          expected = {"Required validation"}
           expected_rules = {"deletion", "non_fast_forward", "pull_request", "required_status_checks"}
           if not expected_rules.issubset(types) or not strict or not expected.issubset(checks):
               raise SystemExit("nx2 must require pull requests, no force pushes or deletion, and current Linux and Windows release builds")
