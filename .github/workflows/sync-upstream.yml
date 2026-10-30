@@ -165,7 +165,7 @@ jobs:
             --field publish_release=false
 
           run_id=''
-          for attempt in $(seq 1 120); do
+          for _ in $(seq 1 120); do
             run_id="$(gh run list \
               --repo "$GH_REPO" \
               --workflow release-binaries.yml \
