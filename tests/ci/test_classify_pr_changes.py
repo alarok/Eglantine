@@ -63,6 +63,11 @@ class ClassifyPrChangesTest(unittest.TestCase):
                 self.write(path, "changed\n")
                 self.assertTrue(self.classify_head())
 
+    def test_release_workflow_runs_the_builds_it_defines(self):
+        self.write(".github/workflows/release-binaries.yml", "name: release\n")
+
+        self.assertTrue(self.classify_head())
+
     def test_deleted_source_path_runs_emulator_builds(self):
         (self.repo / "src/old.cpp").unlink()
 

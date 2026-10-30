@@ -1,7 +1,8 @@
 # Upstream sync
 
-The `Sync upstream` workflow checks `Djihads80/Eglantine` `nx2` every day.
+The `Sync upstream` workflow checks `Djihads80/Eglantine` `nx2` every 6 hours.
 You can also start it from the Actions page.
+A forked repository does not update itself. A check with no upstream changes takes less than a minute.
 
 The workflow merges upstream changes into a reserved branch named
 `automation/sync-upstream-nx2`. It merges the current fork `nx2` first.
@@ -22,7 +23,14 @@ bypass actors. Allow merge commits:
 
 The workflow checks the active rules for `Required validation` and strict mode.
 Enable auto-merge in the repository settings. Enable Actions to create pull
-requests. The workflow uses the repository `GITHUB_TOKEN`; it needs no PAT.
+requests.
+
+The workflow uses the repository `GITHUB_TOKEN` for pull requests and builds.
+GitHub refuses a `GITHUB_TOKEN` push that changes `.github/workflows`.
+Upstream changes to those files therefore need the `SYNC_PUSH_TOKEN` secret.
+Use a fine-grained token for this repository only, with read and write access
+to contents and workflows. The workflow uses it only for the Git push. Without
+the secret, the run fails at the push and the branch does not change.
 
 Pushes and merges made with a user token start the existing release workflow.
 That workflow publishes a prerelease after both platform builds pass.

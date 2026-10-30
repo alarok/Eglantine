@@ -2,7 +2,7 @@ name: Sync upstream
 
 on:
   schedule:
-    - cron: '17 6 * * *'
+    - cron: '17 */6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -31,6 +31,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # GITHUB_TOKEN cannot push upstream changes to workflow files.
+          token: ${{ secrets.SYNC_PUSH_TOKEN || github.token }}
 
       - name: Merge the fork base and upstream
         id: prepare
@@ -159,6 +161,13 @@ jobs:
             exit 1
           fi
 
+          last_run_id="$(gh run list \
+            --repo "$GH_REPO" \
+            --workflow release-binaries.yml \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId // 0')"
+
           gh workflow run release-binaries.yml \
             --repo "$GH_REPO" \
             --ref "$SYNC_BRANCH" \
@@ -172,7 +181,7 @@ jobs:
               --branch "$SYNC_BRANCH" \
               --limit 50 \
               --json databaseId,event,headSha \
-              --jq "map(select(.event == \"workflow_dispatch\" and .headSha == \"$expected_sha\")) | .[0].databaseId // empty")"
+              --jq "map(select(.event == \"workflow_dispatch\" and .headSha == \"$expected_sha\" and .databaseId > $last_run_id)) | .[0].databaseId // empty")"
             if [[ -n "$run_id" ]]; then
               break
             fi
@@ -184,7 +193,8 @@ jobs:
             exit 1
           fi
 
-          gh run watch "$run_id" --repo "$GH_REPO" --exit-status
+          # The default 3-second interval exceeds the GITHUB_TOKEN hourly API limit during a build.
+          gh run watch "$run_id" --repo "$GH_REPO" --exit-status --interval 60
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
 
       - name: Check branch protection
