@@ -10,6 +10,7 @@ ROOT_DOCUMENTS = {
     "LICENSE",
     "README.md",
 }
+DOCUMENT_EXTENSIONS = {".md", ".markdown", ".rst"}
 
 
 def changed_paths(base, head, cwd=None):
@@ -40,7 +41,7 @@ def is_docs_or_ci_path(path):
         return True
     if path.startswith(".github/workflows/"):
         return path.endswith((".yml", ".yaml"))
-    return path in ROOT_DOCUMENTS
+    return path in ROOT_DOCUMENTS or path.rsplit("/", 1)[-1].lower().endswith(tuple(DOCUMENT_EXTENSIONS))
 
 
 def requires_full_build(paths):

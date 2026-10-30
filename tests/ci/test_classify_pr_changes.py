@@ -44,6 +44,7 @@ class ClassifyPrChangesTest(unittest.TestCase):
         self.write(".github/workflows/sync.yml", "name: sync\n")
         self.write("tools/ci/helper.py", "print('check')\n")
         self.write("tests/ci/test_helper.py", "def test_check(): pass\n")
+        self.write("tools/nx2/upstream_sync.md", "Upstream sync guide.\n")
         self.write("README.md", "Updated overview.\n")
 
         self.assertFalse(self.classify_head())
