@@ -16,7 +16,7 @@ One client owns the virtual controller connection.
 Requests and replies use one JSON object per line, encoded as UTF-8.
 This protocol is not HTTP and has no CORS or HTTP action endpoints.
 Malformed JSON closes the connection and discards remaining request bytes.
-Keep pending requests below 8192 bytes.
+Keep each request line at or below 8192 bytes.
 Read each reply before sending the next request.
 An unread reply queue over 65536 bytes closes the connection.
 Commands execute on the GUI thread.

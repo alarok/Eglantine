@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <algorithm>
@@ -142,11 +143,20 @@ void ControllerApi::Neutralize() {
     expiry.stop();
     disconnect(expiry_connection);
     if (gamepad != nullptr && input_active) {
+        constexpr std::array<float, 2> centered{};
         for (std::size_t i = 0; i < buttons.size(); ++i) {
-            gamepad->SetButtonState(0, static_cast<int>(i), false);
+            if (buttons[i]) {
+                gamepad->SetButtonState(0, static_cast<int>(i), false);
+            }
         }
-        gamepad->SetStickPosition(0, InputCommon::VirtualGamepad::VirtualStick::Left, 0.0f, 0.0f);
-        gamepad->SetStickPosition(0, InputCommon::VirtualGamepad::VirtualStick::Right, 0.0f, 0.0f);
+        if (left != centered) {
+            gamepad->SetStickPosition(0, InputCommon::VirtualGamepad::VirtualStick::Left, 0.0f,
+                                      0.0f);
+        }
+        if (right != centered) {
+            gamepad->SetStickPosition(0, InputCommon::VirtualGamepad::VirtualStick::Right, 0.0f,
+                                      0.0f);
+        }
     }
     buttons.fill(false);
     left.fill(0.0f);
@@ -191,35 +201,34 @@ void ControllerApi::Reply(QTcpSocket& destination, const QJsonObject& reply) {
     destination.write(data);
 }
 
+void ControllerApi::RejectClient(const QString& message) {
+    const auto rejected_client = client;
+    Reply(*rejected_client, Error(message));
+    if (rejected_client) {
+        rejected_client->disconnectFromHost();
+    }
+    pending.clear();
+    Neutralize();
+}
+
 void ControllerApi::ReadCommands() {
     if (stopped || !client || client->state() != QAbstractSocket::ConnectedState) {
         return;
     }
     pending += client->read(MaxCommandBytes + 1);
-    if (pending.size() > MaxCommandBytes) {
-        const auto oversized_client = client;
-        Reply(*oversized_client, Error(QStringLiteral("Command exceeds 8192 bytes")));
-        if (oversized_client) {
-            oversized_client->disconnectFromHost();
-        }
-        Neutralize();
-        return;
-    }
     for (auto newline = pending.indexOf('\n');
          client && client->state() == QAbstractSocket::ConnectedState && newline >= 0;
          newline = pending.indexOf('\n')) {
+        if (newline > MaxCommandBytes) {
+            RejectClient(QStringLiteral("Command exceeds 8192 bytes"));
+            return;
+        }
         const auto line = pending.left(newline);
         pending.remove(0, newline + 1);
         QJsonParseError parse_error;
         const auto document = QJsonDocument::fromJson(line, &parse_error);
         if (parse_error.error != QJsonParseError::NoError || !document.isObject()) {
-            const auto malformed_client = client;
-            Reply(*malformed_client, Error(QStringLiteral("Expected one JSON object per line")));
-            if (malformed_client) {
-                malformed_client->disconnectFromHost();
-            }
-            pending.clear();
-            Neutralize();
+            RejectClient(QStringLiteral("Expected one JSON object per line"));
             return;
         }
         const auto requesting_client = client;
@@ -227,6 +236,10 @@ void ControllerApi::ReadCommands() {
         if (client && client == requesting_client) {
             Reply(*client, reply);
         }
+    }
+    if (client && client->state() == QAbstractSocket::ConnectedState &&
+        pending.size() > MaxCommandBytes) {
+        RejectClient(QStringLiteral("Command exceeds 8192 bytes"));
     }
 }
 

@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #pragma once
@@ -34,6 +35,7 @@ public:
 private:
     void AcceptConnection();
     void DisconnectClient();
+    void RejectClient(const QString& message);
     bool UpdateProgram();
     void ReadCommands();
     QJsonObject Execute(const QJsonObject& command);
