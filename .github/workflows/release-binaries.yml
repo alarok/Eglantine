@@ -11,6 +11,9 @@ on:
     branches:
       - nx2
       - nx2-experimental
+  pull_request:
+    branches:
+      - nx2
 
 permissions:
   contents: read

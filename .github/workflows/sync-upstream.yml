@@ -1,0 +1,239 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-upstream-nx2
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'alarok/Eglantine'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      SYNC_BRANCH: automation/sync-upstream-nx2
+
+    steps:
+      - name: Check out the fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge the fork base and upstream
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/Djihads80/Eglantine.git
+          git fetch --no-tags origin refs/heads/nx2:refs/remotes/origin/nx2
+          git fetch --no-tags upstream refs/heads/nx2:refs/remotes/upstream/nx2
+
+          if git ls-remote --exit-code --heads origin "$SYNC_BRANCH" >/dev/null; then
+            git fetch --no-tags origin "refs/heads/$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH"
+            git switch --create sync-bot "refs/remotes/origin/$SYNC_BRANCH"
+            start_sha="$(git rev-parse HEAD)"
+          else
+            git switch --create sync-bot refs/remotes/origin/nx2
+            start_sha="$(git rev-parse HEAD)"
+          fi
+
+          if ! git merge-base --is-ancestor refs/remotes/origin/nx2 HEAD; then
+            git merge --no-edit refs/remotes/origin/nx2
+          fi
+          if ! git merge-base --is-ancestor refs/remotes/upstream/nx2 HEAD; then
+            git merge --no-edit refs/remotes/upstream/nx2
+          fi
+
+          echo "head_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if git diff --quiet refs/remotes/origin/nx2...HEAD; then
+            echo 'needs_sync=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'needs_sync=true' >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "$(git rev-parse HEAD)" == "$start_sha" ]]; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check for a closed sync pull request
+        id: closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          closed="$(gh pr list \
+            --repo "$GH_REPO" \
+            --base nx2 \
+            --head "$SYNC_BRANCH" \
+            --state closed \
+            --limit 1 \
+            --json number,mergedAt \
+            --jq 'map(select(.mergedAt == null)) | .[0].number // empty')"
+          if [[ -n "$closed" ]]; then
+            echo 'paused=true' >> "$GITHUB_OUTPUT"
+            echo 'A closed sync pull request pauses scheduled updates. Reopen it to resume.'
+          else
+            echo 'paused=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push the sync branch
+        if: steps.closed.outputs.paused != 'true' && steps.prepare.outputs.changed == 'true' && steps.prepare.outputs.needs_sync == 'true'
+        shell: bash
+        run: git push origin "HEAD:refs/heads/$SYNC_BRANCH"
+
+      - name: Create or reuse the sync pull request
+        id: pull_request
+        if: steps.closed.outputs.paused != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pull_request="$(gh pr list \
+            --repo "$GH_REPO" \
+            --base nx2 \
+            --head "$SYNC_BRANCH" \
+            --state open \
+            --limit 1 \
+            --json number \
+            --jq '.[0].number // empty')"
+
+          if [[ -z "$pull_request" && "${{ steps.prepare.outputs.needs_sync }}" != 'true' ]]; then
+            echo 'No upstream changes or open sync pull request.'
+            echo 'number=' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -z "$pull_request" ]]; then
+            cat > "$RUNNER_TEMP/sync-pr.md" <<'EOF'
+          This pull request merges the current `Djihads80/Eglantine` `nx2` branch into this fork.
+
+          The sync keeps commits from both branches. A merge conflict stops the workflow before it pushes a branch or changes a pull request.
+
+          GitHub Actions runs the Windows and Linux release builds before automatic merge. These builds do not run the project tests or verify game behavior.
+          EOF
+            pull_request_url="$(gh pr create \
+              --repo "$GH_REPO" \
+              --base nx2 \
+              --head "$SYNC_BRANCH" \
+              --title 'chore: sync upstream nx2' \
+              --body-file "$RUNNER_TEMP/sync-pr.md")"
+            pull_request="${pull_request_url##*/}"
+          fi
+
+          echo "number=$pull_request" >> "$GITHUB_OUTPUT"
+
+      - name: Build the sync branch
+        if: steps.pull_request.outputs.number != ''
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected_sha="${{ steps.prepare.outputs.head_sha }}"
+          pushed_sha="$(gh api "repos/$GH_REPO/git/ref/heads/$SYNC_BRANCH" --jq '.object.sha')"
+          if [[ "$pushed_sha" != "$expected_sha" ]]; then
+            echo '::error title=Sync branch changed::The pushed sync branch does not match the prepared merge. Run the workflow again.'
+            exit 1
+          fi
+
+          pull_request="$(gh api "repos/$GH_REPO/pulls/${{ steps.pull_request.outputs.number }}" --jq '.head.sha + " " + .base.ref')"
+          read -r pull_request_sha base_ref <<< "$pull_request"
+          if [[ "$pull_request_sha" != "$expected_sha" || "$base_ref" != 'nx2' ]]; then
+            echo '::error title=Pull request changed::The sync pull request does not match the prepared merge.'
+            exit 1
+          fi
+
+          gh workflow run release-binaries.yml \
+            --repo "$GH_REPO" \
+            --ref "$SYNC_BRANCH" \
+            --field publish_release=false
+
+          run_id=''
+          for attempt in $(seq 1 120); do
+            run_id="$(gh run list \
+              --repo "$GH_REPO" \
+              --workflow release-binaries.yml \
+              --branch "$SYNC_BRANCH" \
+              --limit 50 \
+              --json databaseId,event,headSha \
+              --jq "map(select(.event == \"workflow_dispatch\" and .headSha == \"$expected_sha\")) | .[0].databaseId // empty")"
+            if [[ -n "$run_id" ]]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [[ -z "$run_id" ]]; then
+            echo '::error title=Build run missing::The release build did not start for the sync branch.'
+            exit 1
+          fi
+
+          gh run watch "$run_id" --repo "$GH_REPO" --exit-status
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Check branch protection
+        if: steps.pull_request.outputs.number != ''
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.pull_request.outputs.number }}
+        run: |
+          set -euo pipefail
+
+          protection="$RUNNER_TEMP/branch-protection.json"
+          if ! gh api "repos/$GH_REPO/branches/nx2/protection" > "$protection"; then
+            echo '::error title=Branch protection required::Protect nx2 and require both release-binaries build checks.'
+            exit 1
+          fi
+
+          if ! python - "$protection" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              rules = json.load(source)
+          required = rules.get("required_status_checks") or {}
+          names = {item.get("context") for item in required.get("checks", [])}
+          names.update(required.get("contexts", []))
+          expected = {"linux-x86_64 binary", "windows-x86_64 binary"}
+          if not required.get("strict") or not expected.issubset(names):
+              raise SystemExit("nx2 must require current Linux and Windows release build checks")
+          PY
+          then
+            echo '::error title=Required build checks missing::Configure strict nx2 protection with linux-x86_64 binary and windows-x86_64 binary checks.'
+            exit 1
+          fi
+
+          if [[ "$(gh api "repos/$GH_REPO" --jq '.allow_auto_merge')" != 'true' ]]; then
+            echo '::error title=Auto-merge disabled::Enable auto-merge in the repository settings.'
+            exit 1
+          fi
+
+          pull_request="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER" --jq '.head.sha + " " + .base.ref')"
+          read -r head_sha base_ref <<< "$pull_request"
+          if [[ "$head_sha" != "${{ steps.prepare.outputs.head_sha }}" || "$base_ref" != 'nx2' ]]; then
+            echo '::error title=Pull request changed::The sync pull request changed during validation. Run the workflow again.'
+            exit 1
+          fi
+
+      - name: Enable automatic merge
+        if: steps.pull_request.outputs.number != ''
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.pull_request.outputs.number }}
+        run: gh pr merge "$PR_NUMBER" --repo "$GH_REPO" --auto --merge --match-head-commit "${{ steps.prepare.outputs.head_sha }}"
