@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <bit>
 #include <functional>
@@ -23,34 +24,24 @@ public:
 
     ~GPUDirtyMemoryManager() = default;
 
+    /// Reports a guest write. Call it after the store.
     void Collect(PAddr address, size_t size) {
-        TransformAddress t = BuildTransform(address, size);
-        TransformAddress tmp, original;
-        do {
-            tmp = current.load(std::memory_order_acquire);
-            original = tmp;
-            if (tmp.address != t.address) {
-                if (IsValid(tmp.address)) {
-                    std::scoped_lock lk(guard);
-                    back_buffer.emplace_back(tmp);
-                    current.exchange(t, std::memory_order_relaxed);
-                    return;
-                }
-                tmp.address = t.address;
-                tmp.mask = 0;
-            }
-            if ((tmp.mask | t.mask) == tmp.mask) {
-                return;
-            }
-            tmp.mask |= t.mask;
-        } while (!current.compare_exchange_weak(original, tmp, std::memory_order_release,
-                                                std::memory_order_relaxed));
+        // Order the store before the load in CollectLine. If a report finds its bits already set,
+        // the Gather that takes these bits must see the stored bytes.
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        // One transform holds one line. A write can cross lines.
+        while (size != 0) {
+            const size_t line_size = (std::min)(size, page_size - (address & page_mask));
+            CollectLine(address, line_size);
+            address += line_size;
+            size -= line_size;
+        }
     }
 
     void Gather(std::function<void(PAddr, size_t)>& callback) {
         {
             std::scoped_lock lk(guard);
-            TransformAddress t = current.exchange(default_transform, std::memory_order_relaxed);
+            TransformAddress t = current.exchange(default_transform);
             front_buffer.swap(back_buffer);
             if (IsValid(t.address)) {
                 front_buffer.emplace_back(t);
@@ -88,6 +79,30 @@ private:
     constexpr static size_t align_size = 1U << align_bits;
     constexpr static size_t align_mask = align_size - 1;
     constexpr static TransformAddress default_transform = {.address = ~0U, .mask = 0U};
+
+    void CollectLine(PAddr address, size_t size) {
+        TransformAddress t = BuildTransform(address, size);
+        TransformAddress tmp, original;
+        do {
+            tmp = current.load(std::memory_order_acquire);
+            original = tmp;
+            if (tmp.address != t.address) {
+                if (IsValid(tmp.address)) {
+                    std::scoped_lock lk(guard);
+                    back_buffer.emplace_back(tmp);
+                    current.exchange(t, std::memory_order_relaxed);
+                    return;
+                }
+                tmp.address = t.address;
+                tmp.mask = 0;
+            }
+            if ((tmp.mask | t.mask) == tmp.mask) {
+                return;
+            }
+            tmp.mask |= t.mask;
+        } while (!current.compare_exchange_weak(original, tmp, std::memory_order_release,
+                                                std::memory_order_relaxed));
+    }
 
     bool IsValid(PAddr address) {
         return address < (1ULL << 39);

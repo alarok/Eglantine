@@ -19,6 +19,7 @@ add_executable(tests
     common/undefined_fix.cpp
     common/unique_function.cpp
     core/core_timing.cpp
+    core/gpu_dirty_memory_manager.cpp
     core/internal_network/network.cpp
     core/loader/loose_dump_sidecars.cpp
     video_core/memory_tracker.cpp
