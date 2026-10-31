@@ -240,9 +240,17 @@ struct GPU::Impl {
         }
         // Copy the area. A wait that ends at shutdown leaves this operation in the queue.
         const u64 fence = RequestSyncOperation([this, raster_area]() {
-            // Apply collected guest writes first. The download must not overwrite a newer write.
+            auto* const rasterizer = renderer->ReadRasterizer();
+            const DAddr start = raster_area.start_address;
+            const u64 size = raster_area.end_address - raster_area.start_address;
+            // Download images first. A collected guest write marks an image CPU modified, and this
+            // cancels its download.
+            rasterizer->FlushRegion(start, size, VideoCommon::CacheType::TextureCache);
+            // Then apply collected guest writes. A buffer download must not overwrite a newer write.
             InvalidateGPUCache();
-            renderer->ReadRasterizer()->FlushRegion(raster_area.start_address, raster_area.end_address - raster_area.start_address);
+            rasterizer->FlushRegion(start, size,
+                                    VideoCommon::CacheType::BufferCache |
+                                        VideoCommon::CacheType::QueryCache);
         });
         gpu_thread.TickGPU(is_async);
         WaitForSyncOperation(fence);
