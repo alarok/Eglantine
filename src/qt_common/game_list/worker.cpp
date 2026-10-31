@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -14,6 +15,8 @@
 #include <utility>
 #include <vector>
 
+#include <QCryptographicHash>
+#include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -194,10 +197,25 @@ QDir ExtractedGameDirectory(const std::string& physical_name) {
     return directory;
 }
 
+// A loose dump can hold hundreds of thousands of files, so each scan must not add them up again.
+// The cache lives with the game metadata: the Refresh button removes it. A new dump of the game
+// changes the date of its main file.
 std::size_t ExtractedGameSize(const std::string& physical_name,
                               const std::atomic_bool& stop_requested) {
-    QDirIterator files{ExtractedGameDirectory(physical_name).absolutePath(),
-                       QDir::Files | QDir::Hidden | QDir::System | QDir::NoSymLinks,
+    const QString directory = ExtractedGameDirectory(physical_name).absolutePath();
+    const auto cache_path =
+        Common::FS::GetEdenPath(Common::FS::EdenPath::CacheDir) / "game_list" / "folder_sizes.ini";
+    QSettings cache{QString::fromStdString(Common::FS::PathToUTF8String(cache_path)),
+                    QSettings::IniFormat};
+    const QString key = QString::fromLatin1(
+        QCryptographicHash::hash(directory.toUtf8(), QCryptographicHash::Md5).toHex());
+    const qint64 stamp =
+        QFileInfo(QString::fromStdString(physical_name)).lastModified().toMSecsSinceEpoch();
+    if (cache.value(key + QStringLiteral("/stamp")).toLongLong() == stamp) {
+        return static_cast<std::size_t>(cache.value(key + QStringLiteral("/size")).toULongLong());
+    }
+
+    QDirIterator files{directory, QDir::Files | QDir::Hidden | QDir::System | QDir::NoSymLinks,
                        QDirIterator::Subdirectories};
     std::size_t size = 0;
     while (!stop_requested && files.hasNext()) {
@@ -207,7 +225,34 @@ std::size_t ExtractedGameSize(const std::string& physical_name,
             size += static_cast<std::size_t>(file_size);
         }
     }
+    if (!stop_requested) {
+        cache.setValue(key + QStringLiteral("/stamp"), stamp);
+        cache.setValue(key + QStringLiteral("/size"), static_cast<qulonglong>(size));
+    }
     return size;
+}
+
+// Walks a game folder and its subfolders. A loose dump's romfs holds the files of that game and no
+// other game, so the walk does not enter it.
+template <typename Callback>
+void WalkGameFolder(const std::filesystem::path& root, Callback&& callback) {
+    namespace fs = std::filesystem;
+    std::error_code error;
+    fs::recursive_directory_iterator entry{root, fs::directory_options::skip_permission_denied,
+                                           error};
+    const fs::recursive_directory_iterator end;
+    while (!error && entry != end) {
+        const fs::path path = entry->path();
+        std::error_code ignored;
+        if (entry->is_directory(ignored) && path.filename() == "romfs" &&
+            fs::is_directory(path.parent_path() / "exefs", ignored)) {
+            entry.disable_recursion_pending();
+        }
+        if (!callback(path)) {
+            return;
+        }
+        entry.increment(error);
+    }
 }
 
 // Returns the number of a folder named after an internal update version, such as 458752.
@@ -681,7 +726,7 @@ void GameListWorker::ScanFileSystem(ScanTarget target, const std::string& dir_pa
         return true;
     };
     if (deep_scan) {
-        Common::FS::IterateDirEntriesRecursively(dir_path, callback, Common::FS::DirEntryFilter::All);
+        WalkGameFolder(std::filesystem::path{Common::FS::ToU8String(dir_path)}, callback);
     } else {
         Common::FS::IterateDirEntries(dir_path, callback, Common::FS::DirEntryFilter::File);
         const auto scan_exefs = [&](const QDir& directory) {
@@ -727,6 +772,7 @@ void GameListWorker::ScanFileSystem(ScanTarget target, const std::string& dir_pa
 }
 
 void GameListWorker::run() {
+    const auto scan_start = std::chrono::steady_clock::now();
     watch_list.clear();
     provider->ClearAllEntries();
 
@@ -769,6 +815,10 @@ void GameListWorker::run() {
         }
     }
 
+    LOG_INFO(Frontend, "Game list scan took {} ms",
+             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                                   scan_start)
+                 .count());
     RecordEvent([this](GameListModel* model) { model->DonePopulating(watch_list); });
     processing_completed.Set();
 }
