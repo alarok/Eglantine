@@ -55,12 +55,17 @@ def users_of(build, ninja, files):
     """Returns the object files that the dependency log links to one of the files."""
     out = subprocess.run([ninja, '-C', str(build), '-t', 'deps'], check=True, capture_output=True,
                          text=True, errors='replace', timeout=120).stdout
+    # The log has millions of lines but few different headers, and each resolve reads the disk.
+    known = {}
     objects, current = set(), None
     for line in out.splitlines():
         if line and not line[0].isspace():
             current = line.split(':')[0].strip().replace('\\', '/').lower()
-        elif line.strip() and str(Path(line.strip()).resolve()).lower() in files:
-            objects.add(current)
+        elif name := line.strip():
+            if name not in known:
+                known[name] = str(Path(name).resolve()).lower() in files
+            if known[name]:
+                objects.add(current)
     return objects
 
 
@@ -93,7 +98,9 @@ def main():
     parser.add_argument('build', type=Path)
     parser.add_argument('--base', default='origin/nx2')
     parser.add_argument('--all', action='store_true', help='check each unit under src/')
-    parser.add_argument('--only', default='', help='check only units with this text in the path')
+    parser.add_argument('--only', action='append', default=[],
+                        help='check only units with this text in the path. Use it more than once '
+                             'to give more texts')
     parser.add_argument('-j', type=int, default=4)
     args = parser.parse_args()
 
@@ -106,7 +113,8 @@ def main():
     entries = json.loads((args.build / 'compile_commands.json').read_text(errors='replace'))
     entries = [e for e in entries if e['file'].endswith('.cpp')
                and Path(e['file']).is_relative_to(source / 'src')
-               and args.only in e['file'].replace('\\', '/')]
+               and (not args.only
+                    or any(text in e['file'].replace('\\', '/') for text in args.only))]
     if not args.all:
         files = changed_files(source, args.base)
         users = users_of(args.build, ninja, files)
