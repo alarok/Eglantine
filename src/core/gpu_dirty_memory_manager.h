@@ -31,7 +31,7 @@ public:
         std::atomic_thread_fence(std::memory_order_seq_cst);
         // One transform holds one line. A write can cross lines.
         while (size != 0) {
-            const size_t line_size = (std::min)(size, page_size - (address & page_mask));
+            const size_t line_size = (std::min<size_t>)(size, page_size - (address & page_mask));
             CollectLine(address, line_size);
             address += line_size;
             size -= line_size;
