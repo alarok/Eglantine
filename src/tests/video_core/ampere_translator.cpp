@@ -147,6 +147,34 @@ TEST_CASE("Ampere IADD3 with a constant writes its carry when the sum goes to RZ
     REQUIRE(!carry(1, 2));
 }
 
+TEST_CASE("Ampere LEA with a constant writes its carry when the sum goes to RZ",
+          "[video_core][ampere]") {
+    // LEA RZ, P1, R1, c[0][0x10], 2
+    const std::array<Instruction, 2> code{{{{0x01ff7a11, 0x10U << 6, 0x07f210ff, 0}}, EXIT}};
+    const auto carry = [&](u32 a, u32 b) {
+        Evaluator run;
+        run.regs[1] = a;
+        run.cbuf[0x10] = b;
+        run.Run(Lower(code));
+        return run.preds[1];
+    };
+    // (0x3fffffff << 2) + 8 = 0x1'00000004
+    REQUIRE(carry(0x3fffffffU, 8));
+    // (1 << 2) + 8 = 12
+    REQUIRE(!carry(1, 8));
+}
+
+TEST_CASE("Ampere LEA with a constant still writes a real destination", "[video_core][ampere]") {
+    // LEA R0, P1, R1, c[0][0x10], 2
+    const std::array<Instruction, 2> code{{{{0x01007a11, 0x10U << 6, 0x07f210ff, 0}}, EXIT}};
+    Evaluator run;
+    run.regs[1] = 1;
+    run.cbuf[0x10] = 8;
+    run.Run(Lower(code));
+    REQUIRE(run.regs[0] == 12);
+    REQUIRE(!run.preds[1]);
+}
+
 TEST_CASE("Ampere IADD3.X applies the negation of a constant", "[video_core][ampere]") {
     // IADD3.X R0, RZ, -c[0][0x10], RZ, with the carry in P0
     const std::array<Instruction, 2> code{{{{0xff007a10, 0x80000000U | (0x10U << 6), 0x007fe4ff, 0}}, EXIT}};

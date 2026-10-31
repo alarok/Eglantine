@@ -2105,10 +2105,11 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code) {
                 insn.Bits(81, 3) == 7 || insn.Bits(62, 2))
                 return fail(index, "native constant LEA carry mode");
             const u32 b = operand(1, false);
-            emit(base(0x5c18000000000000ULL) | (u64{insn.Bits(24, 8)} << 8) |
+            const u32 sum = dest == 255 ? 250U : static_cast<u32>(dest);
+            emit(0x5c18000000000000ULL | predicate | sum | (u64{insn.Bits(24, 8)} << 8) |
                 (u64{b} << 20) | (u64{insn.Bits(75, 5)} << 39));
             emit(0x5b60000000000000ULL | predicate | 7 | (u64{insn.Bits(81, 3)} << 3) |
-                (dest << 8) | (u64{b} << 20) | (u64{7} << 39) | (u64{1} << 49));
+                (u64{sum} << 8) | (u64{b} << 20) | (u64{7} << 39) | (u64{1} << 49));
             break;
         }
         case 0x211: case 0x811: { // LEA low word, no carry result
