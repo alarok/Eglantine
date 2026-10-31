@@ -33,6 +33,20 @@ Find a silent fault from a log in minutes. Each failure this skill covers shows 
 - `Census image:` lines and `draws_sampling`: the images have no memory. Explain the missing texture from these first.
 - A capture with `changed=1` on pages with `gpu_written=0`: the guest rewrote command memory before the GPU thread read it.
 
+## Find a wrong pixel with RenderDoc
+
+Use this for a bright blob, a black shard or wrong geometry that you can see in a frame.
+
+1. Run with the capture triggers and `ENABLE_VULKAN_RENDERDOC_CAPTURE=1`. Capture a frame that shows the fault.
+2. Read the capture with `tools/nx2/debug/rdoc_batch.py`. Go back from the bad pixel, draw by draw, to the first target that holds a bad value.
+3. Read the pixels. `GetMinMax` hides NaN and infinite values.
+4. At the first bad draw, compare the vertex buffer bytes with guest memory. Old bytes in the host buffer point to the upload path.
+5. Count the fault over a whole run with `tools/nx2/debug/halo_count.py <frames> <first> <last> <min percent>`.
+
+## Compare a change inside one run
+
+Add `Common::Nx2Ab::On("<item>")` to the change and run with `EDEN_NX2_AB=4;EDEN_NX2_AB_ITEM=<item>`. Run the same line with an unknown item first. That gives the noise floor. Keep `EDEN_NX2_GPU_PROFILE` off, because its scopes cost time. Evaluate `On` once per draw at most, because side A or B calls the clock. A comparison in one run shows the cost of the change on one scene. It does not show other games.
+
 ## Traps
 
 - `matrix.py` removes each `EDEN_NX2_*` variable from the child. Use `MATRIX_EXTRA_ENV`. A variable set in the parent shell does not reach the game.
