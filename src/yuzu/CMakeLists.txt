@@ -403,7 +403,9 @@ elseif(WIN32)
     target_link_libraries(yuzu PRIVATE Qt6::EntryPointPrivate)
     if(MSVC)
         target_link_libraries(yuzu PRIVATE version.lib)
-        set_target_properties(yuzu PROPERTIES LINK_FLAGS_RELEASE "/SUBSYSTEM:WINDOWS")
+        set_target_properties(yuzu PROPERTIES
+            LINK_FLAGS_RELEASE "/SUBSYSTEM:WINDOWS"
+            LINK_FLAGS_RELWITHDEBINFO "/SUBSYSTEM:WINDOWS")
     elseif(MINGW)
         set_target_properties(yuzu PROPERTIES LINK_FLAGS_RELEASE "-Wl,--subsystem,windows")
         target_link_libraries(yuzu PRIVATE dwmapi)
