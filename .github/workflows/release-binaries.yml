@@ -16,6 +16,9 @@ permissions:
 # eden.profdata; bump it when a refreshed profile needs a newer LLVM.
 env:
   PGO_LLVM_VERSION: '23'
+  # A new profile changes the input of each compile, so ccache stores nothing that it can use again.
+  # Change the tag by hand.
+  PGO_PROFILE_TAG: v020525
 
 concurrency:
   group: release-binaries-${{ github.ref }}
@@ -79,6 +82,9 @@ jobs:
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 1500M
+      # apt.llvm.org replaces its Clang often. The default check reads the file time of the
+      # compiler, so each new package makes all the stored objects useless.
+      CCACHE_COMPILERCHECK: '%compiler% -dumpversion'
       SCCACHE_DIR: ${{ github.workspace }}/.sccache
     strategy:
       fail-fast: false
@@ -340,7 +346,7 @@ jobs:
         if: matrix.mingw
         shell: msys2 {0}
         run: |
-          cmake --build build/release --target yuzu yuzu-cmd --parallel
+          cmake --build build/release --target yuzu yuzu-cmd --parallel -- -k 0
           ccache --show-stats
 
       # This also runs after a failed build. The next run then compiles only what is not done.

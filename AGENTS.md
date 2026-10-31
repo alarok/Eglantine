@@ -67,7 +67,11 @@ Inspect merged PRs and actual diffs before porting an upstream change.
 The `Sync upstream` workflow and the `nx2` ruleset are disabled for now, at Deku's request.
 Update `nx2` with GitHub's Sync fork action or a local merge. Direct pushes to `nx2` are allowed.
 Platform builds run only from a manual `release-binaries` dispatch.
-A full build takes about 45 minutes, so do not make other work wait for one.
+A cold build takes about 45 minutes. A build with stored objects takes about 15 minutes.
+Do not make other work wait for one.
+MSVC accepts code that GCC and Clang refuse. Before a push, run `python tools/nx2/clang_check.py <build dir>`.
+It checks the changed units with local Clang in seconds. `compile-check` builds each push with GCC and Clang.
+Start a release after `compile-check` passes.
 Build success does not prove game compatibility or increased FPS.
 See `tools/nx2/upstream_sync.md` for workflow behavior and release triggers.
 

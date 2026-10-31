@@ -2,7 +2,8 @@ name: compile-check
 
 # MSVC accepts code that GCC and Clang refuse. The local builds use MSVC, and the release job is the
 # only other build. So a fault of this type stayed hidden until a release failed after 30 minutes.
-# This job compiles each push with GCC, with no package and no release.
+# This job compiles each push with GCC and with Clang, with no package and no release. Check it
+# before a release: GCC and Clang also refuse different code.
 on:
   push:
     branches:
@@ -24,12 +25,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linux-gcc:
-    name: Linux GCC
+  compile:
+    name: Linux ${{ matrix.compiler }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 1500M
+      # See release-binaries.yml.
+      CCACHE_COMPILERCHECK: '%compiler% -dumpversion'
+      LLVM_VERSION: '23'
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -46,6 +54,17 @@ jobs:
             spirv-tools spirv-headers libusb-1.0-0-dev \
             libboost-dev libboost-fiber-dev libboost-context-dev \
             libopus-dev libasound2-dev ccache
+
+      - name: Install Clang
+        if: matrix.compiler == 'clang'
+        run: |
+          set -euo pipefail
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key |
+            sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-$LLVM_VERSION main" |
+            sudo tee /etc/apt/sources.list.d/llvm.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends "clang-$LLVM_VERSION" "lld-$LLVM_VERSION"
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -69,27 +88,37 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: check-linux-gcc-${{ github.run_id }}-${{ github.run_attempt }}
+          key: check-linux-${{ matrix.compiler }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            check-linux-gcc-
+            check-linux-${{ matrix.compiler }}-
 
       - name: Configure
-        run: >-
-          cmake -S . -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DBUILD_TESTING=OFF
-          -DYUZU_TESTS=OFF
-          -DYUZU_CMD=ON
-          -DYUZU_ROOM=OFF
-          -DYUZU_ROOM_STANDALONE=OFF
-          -DYUZU_USE_BUNDLED_QT=OFF
-          "-DCMAKE_PREFIX_PATH=$QT_ROOT_DIR"
-          -DYUZU_USE_BUNDLED_SDL3=ON
-          -DVulkanHeaders_FORCE_BUNDLED=ON
-          -DVulkanUtilityLibraries_FORCE_BUNDLED=ON
-          -DENABLE_UPDATE_CHECKER=OFF
-          -DUSE_DISCORD_PRESENCE=OFF
-          -DUSE_CCACHE=ON
+        run: |
+          set -euo pipefail
+          flags=(
+            -DCMAKE_BUILD_TYPE=Release
+            -DBUILD_TESTING=OFF
+            -DYUZU_TESTS=OFF
+            -DYUZU_CMD=ON
+            -DYUZU_ROOM=OFF
+            -DYUZU_ROOM_STANDALONE=OFF
+            -DYUZU_USE_BUNDLED_QT=OFF
+            "-DCMAKE_PREFIX_PATH=$QT_ROOT_DIR"
+            -DYUZU_USE_BUNDLED_SDL3=ON
+            -DVulkanHeaders_FORCE_BUNDLED=ON
+            -DVulkanUtilityLibraries_FORCE_BUNDLED=ON
+            -DENABLE_UPDATE_CHECKER=OFF
+            -DUSE_DISCORD_PRESENCE=OFF
+            -DUSE_CCACHE=ON
+          )
+          if [ '${{ matrix.compiler }}' = 'clang' ]; then
+            flags+=(
+              "-DCMAKE_C_COMPILER=clang-$LLVM_VERSION"
+              "-DCMAKE_CXX_COMPILER=clang++-$LLVM_VERSION"
+              "-DCMAKE_EXE_LINKER_FLAGS=-B/usr/lib/llvm-$LLVM_VERSION/bin -fuse-ld=lld"
+            )
+          fi
+          cmake -S . -B build -G Ninja "${flags[@]}"
 
       # -k 0 reports every compile error in one run.
       - name: Build
@@ -102,4 +131,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .ccache
-          key: check-linux-gcc-${{ github.run_id }}-${{ github.run_attempt }}
+          key: check-linux-${{ matrix.compiler }}-${{ github.run_id }}-${{ github.run_attempt }}
