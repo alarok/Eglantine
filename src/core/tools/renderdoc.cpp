@@ -4,6 +4,8 @@
 // SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+
 #include <renderdoc_app.h>
 
 #include "common/assert.h"
@@ -20,12 +22,20 @@ namespace Tools {
 
 RenderdocAPI::RenderdocAPI() {
 #ifdef WIN32
+    // EDEN_RENDERDOC_DLL=<path>: load RenderDoc with no injection, before the Vulkan instance exists.
+    if (const char* path = std::getenv("EDEN_RENDERDOC_DLL")) {
+        LoadLibraryA(path);
+    }
     if (HMODULE mod = GetModuleHandleA("renderdoc.dll")) {
         void* proc = reinterpret_cast<void*>(GetProcAddress(mod, "RENDERDOC_GetAPI"));
         if (proc) {
             const auto RENDERDOC_GetAPI = reinterpret_cast<pRENDERDOC_GetAPI>(proc);
             const s32 ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_6_0, (void**)&rdoc_api);
             ASSERT(ret == 1);
+            // EDEN_RENDERDOC_PATH=<path template>: the default folder is on the system disk.
+            if (const char* capture_path = std::getenv("EDEN_RENDERDOC_PATH")) {
+                static_cast<RENDERDOC_API_1_6_0*>(rdoc_api)->SetCaptureFilePathTemplate(capture_path);
+            }
         }
     }
 #elif defined(__HAIKU__)

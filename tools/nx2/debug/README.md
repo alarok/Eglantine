@@ -21,6 +21,10 @@ Only `play.ps1` and `matrix.py` start it.
 - `EDEN_NX2_VDEC_DUMP=<dir>` writes each `nx2:vdecsvc` movie as an IVF file (input) and an NV12 file (output).
   The log gets `changed while the game had it` if guest memory of a decoded image changes before the decoder uses it again.
 - `EDEN_NAN_OUTPUTS=magenta|zero|big` replaces NaN or infinite float color outputs. Use an empty shader cache.
+- `EDEN_RENDERDOC_DLL=<renderdoc.dll>` loads RenderDoc at the start. Also set `ENABLE_VULKAN_RENDERDOC_CAPTURE=1`, or the layer stays off.
+  `EDEN_RENDERDOC_PATH=<template>` sets the path of the capture files.
+- `EDEN_NX2_RDOC_PRESENTS=<n>[,<n>...]` makes one RenderDoc capture from present `n` to present `n+2`. Keep the numbers at least 3 apart.
+- `EDEN_NX2_FRAME_CAPTURE_EVERY=<n>` changes the interval of the saved frames from 120 presents.
 - The GUI reads these names from `nx2_switches.txt`. A variable in the real environment wins.
 - `matrix.py` removes every `EDEN_NX2_*` variable from the child environment.
   To pass one, set `MATRIX_EXTRA_ENV="NAME=value;NAME=value"`.
@@ -72,6 +76,14 @@ The first line of a capture holds the reason. Each next line is one pushbuffer e
 
 - `pipecache.py`: use it to read a shader disk cache (`vulkan.bin`) without the emulator. It counts pipelines and groups them by device features. With two files it shows the keys they share, and how the other keys differ.
   `python pipecache.py <vulkan.bin> [<other vulkan.bin>]`
+
+## RenderDoc tools
+
+- `rdoc_batch.py`: use it to read a RenderDoc capture with no manual work. It runs in the Python of RenderDoc. The header of the file lists the commands.
+  `set RDOC_CAP=<file.rdc>`, `set RDOC_OUT=<folder>`, `set RDOC_COMMANDS=summary|scan 1 200000 200`, then `qrenderdoc.exe --python rdoc_batch.py`.
+  `qrenderdoc` opens a window. Run it on a hidden desktop.
+- `halo_count.py`: use it to find saved frames with large white areas.
+  `python halo_count.py <frames-dir> [first] [last] [min-percent]`
 
 ## Process tools
 

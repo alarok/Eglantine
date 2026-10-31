@@ -50,6 +50,7 @@
 #include "core/hle/kernel/k_session.h"
 #include "core/hle/kernel/k_transfer_memory.h"
 #include "core/memory.h"
+#include "core/tools/renderdoc.h"
 #include "video_core/host1x/host1x.h"
 #include "video_core/host1x/nx2_video_decoder.h"
 #include "video_core/nx2.h"
@@ -1244,17 +1245,44 @@ private:
         }
         system.GPU().RequestComposite(std::move(layers), std::move(fences));
         CaptureFrame();
+        ToggleRenderdocCapture();
         DumpRanges();
         system.SpeedLimiter().DoSpeedLimiting(system.CoreTiming().GetGlobalTimeUs());
         system.GetPerfStats().EndSystemFrame();
         system.GetPerfStats().BeginSystemFrame();
     }
 
+    // EDEN_NX2_RDOC_PRESENTS=<n>[,<n>...] with EDEN_RENDERDOC_DLL: make a RenderDoc capture from
+    // present n to present n+2. The GPU thread is behind the guest, so one present interval can
+    // cut a frame in two. Keep the numbers at least 3 apart.
+    void ToggleRenderdocCapture() {
+        static const std::vector<u64> presents = [] {
+            std::vector<u64> list;
+            if (const char* value = std::getenv("EDEN_NX2_RDOC_PRESENTS")) {
+                for (char* end = nullptr; *value; value = *end ? end + 1 : end) {
+                    list.push_back(std::strtoull(value, &end, 10));
+                }
+            }
+            return list;
+        }();
+        for (const u64 present : presents) {
+            if (m_presents == present || m_presents == present + 2) {
+                LOG_INFO(Service, "RenderDoc capture toggled at present {}", m_presents);
+                system.GetRenderdocAPI().ToggleCapture();
+            }
+        }
+    }
+
     // EDEN_NX2_FRAME_CAPTURE=<dir>: every 120th present, save what the renderer shows as
     // nx2-frame-<n>.tga in <dir> (lets hidden test runs check the output; idea from changes.patch).
+    // EDEN_NX2_FRAME_CAPTURE_EVERY=<n> changes the interval, to catch short effects.
     void CaptureFrame() {
         static const char* const directory = std::getenv("EDEN_NX2_FRAME_CAPTURE");
-        if (directory == nullptr || (m_presents % 120) != 1 || m_capture_pending->exchange(true)) {
+        static const u32 every = [] {
+            const char* value = std::getenv("EDEN_NX2_FRAME_CAPTURE_EVERY");
+            return value ? static_cast<u32>(std::strtoul(value, nullptr, 10)) : 120U;
+        }();
+        if (directory == nullptr || (m_presents % every) != 1 || m_capture_pending->exchange(true)) {
             return;
         }
         const auto layout = Layout::DefaultFrameLayout(1280, 720);

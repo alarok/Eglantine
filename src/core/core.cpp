@@ -301,7 +301,7 @@ struct System::Impl {
         exit_locked = false;
         exit_requested = false;
 
-        if (Settings::values.enable_renderdoc_hotkey) {
+        if (Settings::values.enable_renderdoc_hotkey || std::getenv("EDEN_RENDERDOC_DLL") != nullptr) {
             renderdoc_api.emplace();
         }
 
