@@ -48,6 +48,7 @@ class GRenderWindow;
 class LoadingScreen;
 class OverlayDialog;
 class ControllerDialog;
+class ControllerApi;
 class QLabel;
 class MultiplayerState;
 class QPushButton;
@@ -488,6 +489,7 @@ private:
     std::unique_ptr<DiscordRPC::DiscordInterface> discord_rpc;
     std::unique_ptr<PlayTime::PlayTimeManager> play_time_manager;
     std::shared_ptr<InputCommon::InputSubsystem> input_subsystem;
+    std::unique_ptr<ControllerApi> controller_api;
 
 #ifdef ENABLE_UPDATE_CHECKER
     QFuture<std::optional<Common::Net::Release>> update_future;
