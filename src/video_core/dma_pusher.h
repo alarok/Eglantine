@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <optional>
 #include <span>
+#include <unordered_set>
 #include <vector>
 #include <boost/container/small_vector.hpp>
 #include <queue>
@@ -180,6 +181,8 @@ private:
     void ReportUnboundSubchannel();
     void WatchArgument(u32 method, u32 argument) const;
     [[nodiscard]] bool OnGpuWrittenPages(GPUVAddr address, size_t size);
+    bool FlushGpuWrittenWindow(GPUVAddr address, size_t size);
+    [[nodiscard]] bool InCurrentWindow(GPUVAddr address, size_t size) const;
     [[nodiscard]] std::span<const CommandHeader> SubmittedWords(const CommandList& list);
 
 public:
@@ -239,6 +242,10 @@ public:
     std::array<ParsedEntry, 64> parsed_entries{};
     size_t parsed_entry_count{};
     std::vector<ParkedMethod> parked_methods;
+    std::unordered_set<GPUVAddr> first_write_checked; ///< Pages OnGpuWrittenPages waited for
+    GPUVAddr current_window_begin{}; ///< Memory read back at current_window_writes
+    GPUVAddr current_window_end{};
+    u64 current_window_writes{};
     GPUVAddr split_method_end{}; ///< End of the last entry that ended inside a method
 
     std::array<Engines::EngineInterface*, max_subchannels> subchannels{};

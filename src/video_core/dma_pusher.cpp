@@ -132,12 +132,13 @@ bool DmaPusher::Step() {
                 bool flushed_parameters = false;
                 const GPUVAddr address = dma_state.dma_get;
                 const size_t bytes = words * sizeof(u32);
-                if (flush_parameters && words <= 64 && OnGpuWrittenPages(address, bytes)) {
+                const bool on_written_pages = flush_parameters && words <= 64 && OnGpuWrittenPages(address, bytes);
+                const bool in_current_window = on_written_pages && InCurrentWindow(address, bytes);
+                if (on_written_pages && !in_current_window) {
                     if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
                         split.Drain();
                     }
-                    if (memory_manager.IsMemoryDirty(address, bytes, VideoCommon::CacheType::BufferCache)) {
-                        memory_manager.FlushRegion(address, bytes, VideoCommon::CacheType::BufferCache);
+                    if (FlushGpuWrittenWindow(address, bytes)) {
                         flushed_parameters = true;
                         static std::atomic<u32> flush_logs{};
                         if (flush_logs.fetch_add(1) < 20) {
@@ -151,8 +152,11 @@ bool DmaPusher::Step() {
                 } else if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
                     // The caches behind IsMemoryDirty belong to the split's back thread.
                     split.Defer([engine_state, memory = &memory_manager, address = GPUVAddr{dma_state.dma_get},
-                                 bytes = words * sizeof(u32)] {
+                                 bytes = words * sizeof(u32), in_current_window] {
                         engine_state->current_dirty = memory->IsMemoryDirty(address, bytes);
+                        if (in_current_window && engine_state->current_dirty) {
+                            VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::StaleWindowWords, 1);
+                        }
                     });
                 } else {
                     engine_state->current_dirty = memory_manager.IsMemoryDirty(dma_state.dma_get, words * sizeof(u32));
@@ -513,14 +517,54 @@ bool DmaPusher::OnGpuWrittenPages(GPUVAddr address, size_t size) {
         return true;
     }
     // A dispatch or a copy that is still queued on the split's back can be the first to write these
-    // pages. Do not wait in other cases: this runs for each entry, and a wait for each one takes
-    // away the gain of the split.
+    // pages. Wait for it once per page: this runs for each entry, and a wait for each one costs 13%
+    // of the front on title 4. After that the bits above tell. The GPU fills only small entries
+    // (20 bytes on titles 1 and 4).
+    constexpr size_t MaxGpuFilledEntry = 64;
     auto& split = VideoCommon::GpuSplit::Get();
-    if (split.Active() && split.HasQueuedWrites()) {
-        split.Drain();
-        return any_written();
+    if (size > MaxGpuFilledEntry || !split.Active() || !split.HasQueuedWrites()) {
+        return false;
     }
-    return false;
+    const bool new_first = first_write_checked.insert(address >> 12).second;
+    const bool new_last = first_write_checked.insert((address + size - 1) >> 12).second;
+    if (!new_first && !new_last) {
+        return false;
+    }
+    split.Drain();
+    return any_written();
+}
+
+// A download stops and waits for the host GPU. Words the GPU wrote for command lists sit close
+// together (title 4 has 1408 records), so one download takes those nearby and the next ones wait
+// for nothing.
+bool DmaPusher::FlushGpuWrittenWindow(GPUVAddr address, size_t size) {
+    constexpr GPUVAddr Window = 0x10000;
+    const GPUVAddr begin = address & ~(Window - 1);
+    const size_t bytes = ((address + size + Window - 1) & ~(Window - 1)) - begin;
+    auto& split = VideoCommon::GpuSplit::Get();
+    const auto note_current = [&] {
+        current_window_begin = begin;
+        current_window_end = begin + bytes;
+        current_window_writes = split.QueuedWriteCount();
+    };
+    // Check only the words we read: draws can keep other words in the window dirty.
+    if (!memory_manager.IsMemoryDirty(address, size, VideoCommon::CacheType::BufferCache)) {
+        if (!memory_manager.IsMemoryDirty(begin, bytes, VideoCommon::CacheType::BufferCache)) {
+            note_current();
+        }
+        return false;
+    }
+    memory_manager.FlushRegion(begin, bytes, VideoCommon::CacheType::BufferCache);
+    note_current();
+    return true;
+}
+
+// Title 4 reads 1408 records for each frame, and a wait for the back for each record makes the two
+// threads take turns. A window stays current until the front sends another dispatch or copy.
+bool DmaPusher::InCurrentWindow(GPUVAddr address, size_t size) const {
+    auto& split = VideoCommon::GpuSplit::Get();
+    return split.Active() && current_window_writes == split.QueuedWriteCount() &&
+           address >= current_window_begin && address + size <= current_window_end;
 }
 
 // The guest does not always wait for a list before it writes that command memory again. Title 4
@@ -547,15 +591,13 @@ void DmaPusher::FlushGpuWrittenCommands(GPUVAddr address, size_t size) {
     if (!Tegra::g_nx2_ampere.load(std::memory_order_relaxed) || size == 0) {
         return;
     }
-    if (!OnGpuWrittenPages(address, size)) {
+    if (!OnGpuWrittenPages(address, size) || InCurrentWindow(address, size)) {
         return;
     }
     // The caches belong to the split's back: it first runs what the front queued (the dispatch
     // that writes these words among it).
     VideoCommon::GpuSplit::Get().Drain();
-    if (memory_manager.IsMemoryDirty(address, size, VideoCommon::CacheType::BufferCache)) {
-        memory_manager.FlushRegion(address, size, VideoCommon::CacheType::BufferCache);
-    }
+    FlushGpuWrittenWindow(address, size);
 }
 
 void DmaPusher::ReportUnboundSubchannel() {

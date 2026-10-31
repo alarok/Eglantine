@@ -6,7 +6,9 @@
 #include <array>
 #include <chrono>
 #include <cstdlib>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "common/common_types.h"
@@ -80,7 +82,7 @@ inline u64 Now() {
 struct ThreadData {
     std::array<u64, static_cast<size_t>(Zone::Count)> exclusive_ns{};
     std::array<u64, static_cast<size_t>(Zone::Count)> count{};
-    std::array<u64, 8> counters{}; ///< See Counter
+    std::array<u64, 17> counters{}; ///< See Counter
     u64 child_ns{};    ///< Time of the zones nested in the current one
     u64 window_start{};
 };
@@ -130,7 +132,34 @@ enum class Counter : u32 {
     SameValueWrites, ///< Of MethodWrites: the register already held the value
     AcquireChecks,  ///< Semaphore acquires evaluated
     AcquireWaits,   ///< Of AcquireChecks: not met yet (the channel waits)
+    AcquireDrains,  ///< Of AcquireChecks: the front waited for the split's back
+    AcquireDrainsMet, ///< Of AcquireDrains: met after the wait
+    AcquireByPuller,  ///< Of AcquireDrainsMet: last release from the puller
+    AcquireBy3D,      ///< Of AcquireDrainsMet: last release from the 3D engine
+    AcquireByCompute, ///< Of AcquireDrainsMet: last release from the compute engine
+    AcquireByDma,     ///< Of AcquireDrainsMet: last release from the copy engine
+    ReadbackWaits,    ///< Host GPU waits for a read back of buffer memory
+    ReadbackBytes,    ///< Bytes these read backs copied
+    StaleWindowWords, ///< Macro parameters read without a wait, but dirty on the back (must stay 0)
 };
+
+/// Which engine last released each semaphore address (filled only while profiling).
+enum class Releaser : u32 { None, Puller, Engine3D, Compute, Dma };
+inline std::mutex g_releasers_mutex;
+inline std::unordered_map<u64, Releaser> g_releasers;
+
+inline void NoteRelease(u64 address, Releaser releaser) {
+    if (g_enabled) {
+        std::scoped_lock lock{g_releasers_mutex};
+        g_releasers[address] = releaser;
+    }
+}
+
+inline Releaser LastRelease(u64 address) {
+    std::scoped_lock lock{g_releasers_mutex};
+    const auto it = g_releasers.find(address);
+    return it != g_releasers.end() ? it->second : Releaser::None;
+}
 
 /// Device pages (4 KiB) the native MME has DMA-read since start (GPU thread only; filled only
 /// while profiling): which buffer downloads anything on the GPU thread reads back.
@@ -187,9 +216,19 @@ inline void Report(const char* thread_name = "GPU thread") {
     line += fmt::format(" | 3D register writes {:.0f} ({:.0f} same value)",
                         static_cast<double>(data.counters[4]) * 1e9 / window,
                         static_cast<double>(data.counters[5]) * 1e9 / window);
-    line += fmt::format(" | acquires {:.0f} ({:.0f} waited)",
-                        static_cast<double>(data.counters[6]) * 1e9 / window,
-                        static_cast<double>(data.counters[7]) * 1e9 / window);
+    const auto rate = [&](Counter counter) {
+        return static_cast<double>(data.counters[static_cast<size_t>(counter)]) * 1e9 / window;
+    };
+    line += fmt::format(" | acquires {:.0f} ({:.0f} waited)", rate(Counter::AcquireChecks),
+                        rate(Counter::AcquireWaits));
+    line += fmt::format(" | acquire drains {:.0f} ({:.0f} met: puller {:.0f}, 3D {:.0f}, compute "
+                        "{:.0f}, copy {:.0f})",
+                        rate(Counter::AcquireDrains), rate(Counter::AcquireDrainsMet),
+                        rate(Counter::AcquireByPuller), rate(Counter::AcquireBy3D),
+                        rate(Counter::AcquireByCompute), rate(Counter::AcquireByDma));
+    line += fmt::format(" | read back waits {:.1f} ({:.0f} KiB) | stale window words {:.1f}",
+                        rate(Counter::ReadbackWaits), rate(Counter::ReadbackBytes) / 1024.0,
+                        rate(Counter::StaleWindowWords));
     LOG_INFO(HW_GPU, "{} per second:{}", thread_name, line);
     data = {};
     data.window_start = now;

@@ -614,6 +614,7 @@ void Maxwell3D::ProcessQueryGet() {
         if (regs.report_semaphore.query.short_query != 0) {
             flags |= VideoCommon::QueryPropertiesFlags::IsAFence;
         }
+        VideoCommon::Nx2Profile::NoteRelease(sequence_address, VideoCommon::Nx2Profile::Releaser::Engine3D);
         rasterizer->Query(sequence_address, query_type, flags, payload, subreport);
         break;
     case Regs::ReportSemaphore::Operation::Acquire:
@@ -951,6 +952,9 @@ void Maxwell3D::FrontWrite(VideoCommon::GpuSplit& split, FrontState& fs, u32 met
         case MAXWELL3D_REG_INDEX(falcon[4]):
             fs.regs[MAXWELL3D_REG_INDEX(shadow_scratch)] = 1;
             break;
+        case MAXWELL3D_REG_INDEX(report_semaphore.query):
+            FrontNoteRelease(split, fs);
+            break;
         default:
             if (method >= cb_data && method < cb_data + 16) {
                 fs.regs[MAXWELL3D_REG_INDEX(const_buffer.offset)] += sizeof(u32);
@@ -964,6 +968,20 @@ void Maxwell3D::FrontWrite(VideoCommon::GpuSplit& split, FrontState& fs, u32 met
         split.MacroWrite(this, method, argument);
     } else {
         split.Method(this, method, argument, is_last_call, nullptr);
+    }
+}
+
+// Tells a later semaphore acquire that this release is on its way (GpuSplit::NoteQueuedRelease).
+void Maxwell3D::FrontNoteRelease(VideoCommon::GpuSplit& split, const FrontState& fs) {
+    using Report = Regs::ReportSemaphore;
+    const auto& report =
+        *reinterpret_cast<const Report*>(&fs.regs[MAXWELL3D_REG_INDEX(report_semaphore)]);
+    if (report.query.operation != Report::Operation::Release ||
+        report.query.report != Report::Report::Payload || report.query.reduction_enable != 0) {
+        return;
+    }
+    if (const auto device = memory_manager.GpuToCpuAddress(report.Address())) {
+        split.NoteQueuedRelease(*device, report.payload);
     }
 }
 
@@ -1060,6 +1078,9 @@ void Maxwell3D::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit
             }
             case MAXWELL3D_REG_INDEX(falcon[4]):
                 fs.regs[MAXWELL3D_REG_INDEX(shadow_scratch)] = 1;
+                break;
+            case MAXWELL3D_REG_INDEX(report_semaphore.query):
+                FrontNoteRelease(split, fs);
                 break;
             default:
                 if (!FrontHandledOutsideDrawManager(method)) {

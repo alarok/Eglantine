@@ -309,6 +309,12 @@ void Maxwell3D::DrawManager::ProcessDraw(Maxwell3D& maxwell3d, bool draw_indexed
             draw_indexed, draw_indexed ? draw_state.index_buffer.count : draw_state.vertex_buffer.count,
             instance_count, maxwell3d.ShouldExecute());
     }
+    // A draw with no vertices or no copies changes nothing. Culling makes these (7% of the draws on
+    // title 4), and each one would still bind its pipeline, buffers and textures.
+    if (instance_count == 0 ||
+        (draw_indexed ? draw_state.index_buffer.count : draw_state.vertex_buffer.count) == 0) {
+        return;
+    }
     if (maxwell3d.ShouldExecute()) {
         maxwell3d.rasterizer->Draw(draw_indexed, instance_count);
     }

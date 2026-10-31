@@ -9,6 +9,7 @@
 #include <memory>
 #include <thread>
 #include <type_traits>
+#include <unordered_map>
 
 #include "common/common_types.h"
 
@@ -102,10 +103,25 @@ public:
     /// The front sent work that can write guest memory for command lists (a dispatch or a copy).
     void NoteQueuedWrites() {
         queued_writes = true;
+        ++queued_write_count;
     }
     /// Such work was sent after the last drain.
     [[nodiscard]] bool HasQueuedWrites() const {
         return queued_writes;
+    }
+    /// Such work sent so far: guest memory read back at one count is still current at that count.
+    [[nodiscard]] u64 QueuedWriteCount() const {
+        return queued_write_count;
+    }
+    /// A semaphore release was sent to the back. An acquire after it needs no wait: the back keeps
+    /// the order, across channels too.
+    void NoteQueuedRelease(u64 device_address, u32 value) {
+        queued_releases[device_address] = value;
+    }
+    /// The last release sent to `device_address` after the last drain, or nullptr.
+    [[nodiscard]] const u32* QueuedRelease(u64 device_address) const {
+        const auto it = queued_releases.find(device_address);
+        return it != queued_releases.end() ? &it->second : nullptr;
     }
 
 private:
@@ -169,6 +185,8 @@ private:
     /// Words between publishes: small right after a drain, while the back has nothing to do.
     size_t publish_every{PublishEvery};
     bool queued_writes{};
+    u64 queued_write_count{};
+    std::unordered_map<u64, u32> queued_releases;
     Tegra::Engines::EngineInterface* front_engine{};
 
     // Back side.

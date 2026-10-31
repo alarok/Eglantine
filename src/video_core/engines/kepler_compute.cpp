@@ -114,6 +114,7 @@ void KeplerCompute::ProcessNativeReportSemaphore(u32 argument) {
         });
         return;
     }
+    VideoCommon::Nx2Profile::NoteRelease(address, VideoCommon::Nx2Profile::Releaser::Compute);
     rasterizer->Query(address, VideoCommon::QueryType::Payload,
                       one_word ? VideoCommon::QueryPropertiesFlags::IsAFence
                                : VideoCommon::QueryPropertiesFlags::HasTimeout,
@@ -397,6 +398,7 @@ bool KeplerCompute::ProcessNativeMethod(Core::System& system, u32 method, u32 ar
                     if (watch != 0 && (address & ~u64{0xf}) == (watch & ~u64{0xf})) {
                         LOG_INFO(HW_GPU, "Semaphore watch: QMD release {:#x} = {:#x} flags {:#x}", address, payload, flags);
                     }
+                    VideoCommon::Nx2Profile::NoteRelease(address, VideoCommon::Nx2Profile::Releaser::Compute);
                     rasterizer->Query(address, VideoCommon::QueryType::Payload,
                         VideoCommon::QueryPropertiesFlags::IsAFence, payload, 0);
                 }

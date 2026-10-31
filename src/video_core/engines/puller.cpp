@@ -59,6 +59,14 @@ void DrainBack() {
     VideoCommon::GpuSplit::Get().Drain();
 }
 
+void NoteQueuedRelease(DmaPusher& dma_pusher, GPUVAddr address, u32 payload) {
+    if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
+        if (const auto device = dma_pusher.memory_manager.GpuToCpuAddress(address)) {
+            split.NoteQueuedRelease(*device, payload);
+        }
+    }
+}
+
 } // Anonymous namespace
 
 bool Puller::PendingAcquire::Matches(u32 current) const {
@@ -221,6 +229,8 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
         if (mirror != 0) {
             LOG_DEBUG(HW_GPU, "Switch 2 semaphore {:#x}={:#x} mirrored to {:#x}", sequence_address, payload, mirror);
         }
+        NoteQueuedRelease(dma_pusher, sequence_address, payload);
+        VideoCommon::Nx2Profile::NoteRelease(sequence_address, VideoCommon::Nx2Profile::Releaser::Puller);
         OnBack([rasterizer = dma_pusher.rasterizer, sequence_address, mirror, properties, payload] {
             rasterizer->Query(sequence_address, VideoCommon::QueryType::Payload, properties, payload, 0);
             if (mirror != 0) {
@@ -244,8 +254,46 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
             return;
         }
         VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::AcquireChecks, 1);
+        // A counter that already reached the value stays there, so nothing queued on the back can
+        // change the result. The word in guest memory can only be older, and the rasterizer belongs
+        // to the back. The other operations need what the back has queued.
+        if (op == GpuSemaphoreOperation::AcquireGequal) {
+            if (acquire.Matches(dma_pusher.memory_manager.Read<u32>(acquire.address))) {
+                return;
+            }
+            // A release that meets it is still queued: the back runs that release first.
+            if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
+                const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address);
+                const u32* const queued = device ? split.QueuedRelease(*device) : nullptr;
+                if (queued != nullptr && acquire.Matches(*queued)) {
+                    return;
+                }
+            }
+        }
         DrainBack();
+        VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::AcquireDrains, 1);
         if (acquire.Matches(ReadSemaphoreWord(dma_pusher, acquire.address))) {
+            if (VideoCommon::Nx2Profile::Enabled()) {
+                using VideoCommon::Nx2Profile::Counter;
+                using VideoCommon::Nx2Profile::Releaser;
+                VideoCommon::Nx2Profile::Add(Counter::AcquireDrainsMet, 1);
+                const Releaser releaser = VideoCommon::Nx2Profile::LastRelease(acquire.address);
+                static u32 logged{};
+                if (logged++ < 60) {
+                    LOG_INFO(HW_GPU, "Acquire drain: channel {} address {:#x} op {} value {:#x} releaser {}",
+                             dma_pusher.channel_state.bind_id, acquire.address, acquire.operation,
+                             acquire.value, static_cast<u32>(releaser));
+                }
+                if (releaser == Releaser::Puller) {
+                    VideoCommon::Nx2Profile::Add(Counter::AcquireByPuller, 1);
+                } else if (releaser == Releaser::Engine3D) {
+                    VideoCommon::Nx2Profile::Add(Counter::AcquireBy3D, 1);
+                } else if (releaser == Releaser::Compute) {
+                    VideoCommon::Nx2Profile::Add(Counter::AcquireByCompute, 1);
+                } else if (releaser == Releaser::Dma) {
+                    VideoCommon::Nx2Profile::Add(Counter::AcquireByDma, 1);
+                }
+            }
             return;
         }
         // Registered before the fences run, so a release among them that meets the value counts
@@ -296,6 +344,8 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
 void Puller::ProcessSemaphoreRelease(DmaPusher& dma_pusher) {
     const GPUVAddr sequence_address{regs.semaphore_address.SemaphoreAddress()};
     const u32 payload = regs.semaphore_release;
+    NoteQueuedRelease(dma_pusher, sequence_address, payload);
+    VideoCommon::Nx2Profile::NoteRelease(sequence_address, VideoCommon::Nx2Profile::Releaser::Puller);
     OnBack([rasterizer = dma_pusher.rasterizer, sequence_address, payload] {
         rasterizer->Query(sequence_address, VideoCommon::QueryType::Payload,
                           VideoCommon::QueryPropertiesFlags::IsAFence, payload, 0);
@@ -325,6 +375,8 @@ void Puller::ProcessSemaphoreExecute(DmaPusher& dma_pusher, u32 argument) {
     const u32 payload = regs.reg_array[0x19];
     const u32 operation = argument & 7;
     if (operation == 1) { // RELEASE
+        NoteQueuedRelease(dma_pusher, address, payload);
+        VideoCommon::Nx2Profile::NoteRelease(address, VideoCommon::Nx2Profile::Releaser::Puller);
         OnBack([rasterizer = dma_pusher.rasterizer, address, payload] {
             rasterizer->Query(address, VideoCommon::QueryType::Payload,
                               VideoCommon::QueryPropertiesFlags::IsAFence, payload, 0);
