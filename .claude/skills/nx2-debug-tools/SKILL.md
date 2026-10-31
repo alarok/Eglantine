@@ -5,15 +5,27 @@ description: Debug a Switch 2 game fault in Eglantine from logs instead of by ey
 
 # NX2 debug tools
 
-Find a silent fault from a log in minutes. Each failure this skill covers shows no error line.
+Find a silent fault from a log in minutes.
 `tools/nx2/debug/README.md` has the usage of each tool and how to read each census number.
+`AGENTS.md` has the accounts, the sources of changes, the build commands, the fair test rules and the Legion Go notes.
+
+## First, read what the log already says
+
+Do this before you make a theory. It takes one minute.
+
+1. Search the log for `<Error>`, `<Critical>` and `Draw skipped`. A line can show once for a fault that repeats on each draw.
+2. If a fault shows on one machine only, compare the `Device doesn't support extension` lines of both logs. A missing extension selects another shader path.
+3. Force that path on the machine you can debug. `EDEN_NX2_NO_NV_GEOMETRY=1` sends an NVIDIA card down the AMD and Intel path.
+4. Show the fault with the bug in (red) and with the fix in (green), on the same path.
+
+Real case, 2026-10-31: on the Legion Go, `Read attribute Generic31Y is not implemented` showed once in each log. We read frames and census numbers for hours first. The Generic31 fix (`9bfb841772`) and the switch proved the cause on an RTX 4080 in 3 runs.
 
 ## Steps
 
 1. **Check for a free machine.** Only one heavy emulator runs at a time. `play.ps1` prints `BUSY` and exits with 1 if a game runs. Stop only your own processes, by PID. Do not start a second game.
 2. **Build at low priority.** The owner can play at the same time. Run it from PowerShell, not Git Bash:
    ```powershell
-   cmd /c 'start "" /belownormal /wait /b cmd /c "D:\DEV\egl-build-cli.cmd <worktree>"'
+   cmd /c "start `"`" /belownormal /wait /b cmd /c `"D:\DEV\egl-compare\build-gui-tip.cmd <worktree>`" > D:\DEV\tmp\build.log 2>&1"
    ```
 3. **Make the local games file once.** Copy nothing from a real profile. Write `tools/nx2/debug/games.local.json` with `{"bananza": "<exefs main>"}`. Git ignores it.
 4. **Run a good case and a bad case.** Change one thing between them.
@@ -32,6 +44,8 @@ Find a silent fault from a log in minutes. Each failure this skill covers shows 
 - `Lost shader stores`: that program writes through a loaded pointer. See `044944dd9a`.
 - `Census image:` lines and `draws_sampling`: the images have no memory. Explain the missing texture from these first.
 - A capture with `changed=1` on pages with `gpu_written=0`: the guest rewrote command memory before the GPU thread read it.
+- `failed` about equal to `macro_indirect`, and each `0x1e7` draw at zero: a pipeline did not build, and the draws that it should drive read 0. Search for the first `Draw skipped` line and for the exception before it.
+- A view that is black in 99.95% of its area while the HUD stays: count it with `black_census.py`. Exactly 0 points to a pass that wrote nothing or a target that cleared, not to a dark scene.
 
 ## Find a wrong pixel with RenderDoc
 
@@ -46,9 +60,13 @@ Use this for a bright blob, a black shard or wrong geometry that you can see in 
 ## Compare a change inside one run
 
 Add `Common::Nx2Ab::On("<item>")` to the change and run with `EDEN_NX2_AB=4;EDEN_NX2_AB_ITEM=<item>`. Run the same line with an unknown item first. That gives the noise floor. Keep `EDEN_NX2_GPU_PROFILE` off, because its scopes cost time. Evaluate `On` once per draw at most, because side A or B calls the clock. A comparison in one run shows the cost of the change on one scene. It does not show other games.
+Read the result with `python -B tools/nx2/debug/ab_means.py <log> <first second>`.
 
 ## Traps
 
+- Bananza's key script is timed and blind. Two runs do not reach the same places, so their frame times and black counts do not compare. Compare inside one run. Use Mario Kart World `seed-acc0` to compare between runs.
+- More FPS can mean lost draws. Read `failed` and `zero` next to the frame time.
+- Settings differ between Deku's GUI and a test. Run `python -B tools/nx2/debug/ini_diff.py <his qt-config.ini> <run>/probe.ini` before you compare his result with yours. The tool does not print paths or keys. Read his file only, and never start a test on his profile.
 - `matrix.py` removes each `EDEN_NX2_*` variable from the child. Use `MATRIX_EXTRA_ENV`. A variable set in the parent shell does not reach the game.
 - The split GPU thread does not start at `gpu_accuracy=1`, which is the default of `matrix.py`. Use `seed-play-acc0` to run with it. The macro tags take another path there, so test both.
 - A 10 s window hides a short event. Use `EDEN_NX2_DRAW_CENSUS_SECONDS=2`.
