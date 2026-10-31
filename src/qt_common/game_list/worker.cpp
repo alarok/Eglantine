@@ -23,6 +23,7 @@
 
 #include "common/fs/fs.h"
 #include "common/fs/path_util.h"
+#include "common/net/nintendo_store.h"
 #include "common/settings.h"
 #include "core/core.h"
 #include "core/file_sys/card_image.h"
@@ -267,6 +268,61 @@ bool HasNewerLooseDump(const std::filesystem::path& main_path) {
     return found_newer;
 }
 
+std::filesystem::path StoreCachePath(u64 title_id, std::string_view extension) {
+    return Common::FS::GetEdenPath(Common::FS::EdenPath::CacheDir) / "game_list" /
+           fmt::format("{:016X}.store.{}", title_id, extension);
+}
+
+std::optional<Common::Net::StoreMetadata> ReadStoreCache(u64 title_id) {
+    QFile name_file{QString::fromStdString(
+        Common::FS::PathToUTF8String(StoreCachePath(title_id, "txt")))};
+    QFile icon_file{QString::fromStdString(
+        Common::FS::PathToUTF8String(StoreCachePath(title_id, "jpeg")))};
+    if (!name_file.open(QFile::ReadOnly) || !icon_file.open(QFile::ReadOnly)) {
+        return std::nullopt;
+    }
+
+    const QByteArray name = name_file.readAll();
+    const QByteArray icon = icon_file.readAll();
+    return Common::Net::StoreMetadata{name.toStdString(),
+                                      std::vector<u8>(icon.cbegin(), icon.cend())};
+}
+
+void WriteStoreCache(u64 title_id, const Common::Net::StoreMetadata& metadata) {
+    const auto name_path = StoreCachePath(title_id, "txt");
+    void(Common::FS::CreateParentDirs(name_path));
+
+    QFile icon_file{QString::fromStdString(
+        Common::FS::PathToUTF8String(StoreCachePath(title_id, "jpeg")))};
+    QFile name_file{QString::fromStdString(Common::FS::PathToUTF8String(name_path))};
+    if (!icon_file.open(QFile::WriteOnly) || !name_file.open(QFile::WriteOnly)) {
+        LOG_ERROR(Frontend, "Failed to open the store cache files of {:016X}", title_id);
+        return;
+    }
+    icon_file.write(reinterpret_cast<const char*>(metadata.icon.data()),
+                    static_cast<qint64>(metadata.icon.size()));
+    name_file.write(metadata.name.data(), static_cast<qint64>(metadata.name.size()));
+}
+
+// Returns the cached store data of a title, or requests it once. The game list runs one worker at
+// a time, so the lookup needs no lock.
+std::optional<Common::Net::StoreMetadata> FindStoreMetadata(u64 title_id,
+                                                            const std::atomic_bool& stop) {
+    if (title_id == 0) {
+        return std::nullopt;
+    }
+    if (auto cached = ReadStoreCache(title_id)) {
+        return cached;
+    }
+
+    static Common::Net::StoreLookup lookup{Common::Net::FetchStoreUrl};
+    auto metadata = lookup.Find(title_id, stop);
+    if (metadata) {
+        WriteStoreCache(title_id, *metadata);
+    }
+    return metadata;
+}
+
 QString FormatPatchNameVersions(const FileSys::PatchManager& patch_manager,
                                 Loader::AppLoader& loader, bool updatable = true) {
     QString out;
@@ -346,6 +402,16 @@ QString LooseExeFSName(const std::string& physical_name) {
     // Dump tools often add the title ID: "Some Game [0400000000000000]".
     static const QRegularExpression title_id{QStringLiteral(R"(\s*\[[0-9A-Fa-f]{16}\]$)")};
     return name.remove(title_id);
+}
+
+QString LooseDumpTitle(const std::string& physical_name, u64 title_id) {
+    const QString folder_name = LooseExeFSName(physical_name);
+    if (folder_name.isEmpty() || !UISettings::values.store_game_metadata.GetValue()) {
+        return folder_name;
+    }
+
+    const auto cached = ReadStoreCache(title_id);
+    return cached && !cached->name.empty() ? QString::fromStdString(cached->name) : folder_name;
 }
 
 QString LooseDumpVersion(const std::string& physical_name, Loader::AppLoader& loader) {
@@ -536,16 +602,27 @@ void GameListWorker::ScanFileSystem(ScanTarget target, const std::string& dir_pa
 
                 std::string name = " ";
                 const auto res3 = app_loader->ReadTitle(name);
-                if ((res3 != Loader::ResultStatus::Success || name.empty() || name == " ") &&
-                    IsExtractedNCAMain(physical_name)) {
-                    if (const QString loose = LooseExeFSName(physical_name); !loose.isEmpty()) {
-                        name = loose.toStdString();
-                    }
-                }
+                const bool needs_name =
+                    res3 != Loader::ResultStatus::Success || name.empty() || name == " ";
 
                 QString dump_version;
                 if (IsExtractedNCAMain(physical_name) &&
                     !LooseExeFSName(physical_name).isEmpty()) {
+                    if (UISettings::values.store_game_metadata.GetValue() &&
+                        (needs_name || icon.empty())) {
+                        if (const auto store = FindStoreMetadata(id, stop_requested)) {
+                            if (icon.empty()) {
+                                icon = store->icon;
+                            }
+                            if (needs_name) {
+                                name = store->name;
+                            }
+                        }
+                    }
+                    if (name.empty() || name == " ") {
+                        name = LooseExeFSName(physical_name).toStdString();
+                    }
+
                     dump_version = LooseDumpVersion(physical_name, *app_loader);
                     if (dump_version.isEmpty()) {
                         dump_version = QObject::tr("Unknown");

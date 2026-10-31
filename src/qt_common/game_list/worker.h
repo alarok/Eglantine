@@ -41,6 +41,10 @@ class AppLoader;
 /// Returns the game name of a loose ExeFS dump, or an empty string for any other path.
 QString LooseExeFSName(const std::string& physical_name);
 
+/// Returns the name of a loose ExeFS dump: the cached store name if the store setting is on, or
+/// else the game folder name. Returns an empty string for any other path.
+QString LooseDumpTitle(const std::string& physical_name, u64 title_id);
+
 /// Returns the version of a loose ExeFS dump: the loader value, or v<N> from an updates/<N> folder.
 /// Returns an empty string if neither exists. The v<N> value is for display only.
 QString LooseDumpVersion(const std::string& physical_name, Loader::AppLoader& loader);

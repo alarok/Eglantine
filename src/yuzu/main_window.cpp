@@ -2045,7 +2045,7 @@ void MainWindow::BootGame(const QString& filename, Service::AM::FrontendAppletPa
         title_name = metadata.first->GetApplicationName();
     }
     if (res != Loader::ResultStatus::Success || title_name.empty()) {
-        title_name = LooseExeFSName(filename.toStdString()).toStdString();
+        title_name = LooseDumpTitle(filename.toStdString(), title_id).toStdString();
     }
     if (title_name.empty()) {
         title_name = Common::FS::PathToUTF8String(
@@ -4141,7 +4141,7 @@ void MainWindow::OnApplicationChanged(u64 program_id) {
             const auto game_path = current_game_path.toStdString();
             if (loader.ReadTitle(title_name) != Loader::ResultStatus::Success ||
                 title_name.empty()) {
-                title_name = LooseExeFSName(game_path).toStdString();
+                title_name = LooseDumpTitle(game_path, program_id).toStdString();
             }
             if (title_version.empty()) {
                 title_version = LooseDumpVersion(game_path, loader).toStdString();

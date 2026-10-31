@@ -148,6 +148,7 @@ add_library(
     cpu_features.h
     httplib.h
     net/net.h net/net.cpp
+    net/nintendo_store.h net/nintendo_store.cpp
     container/unordered_map.h container/unordered_set.h)
 
 set_source_files_properties(zbic_compression.cpp PROPERTIES
