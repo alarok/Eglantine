@@ -8,10 +8,14 @@
 #include <atomic>
 #include <cstdlib>
 #include <cstdio>
+#include <deque>
+#include <string>
+#include <vector>
 
 #include "common/settings.h"
 #include "core/core.h"
 #include "core/memory.h"
+#include "video_core/nx2_census.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/dma_pusher.h"
 #include "video_core/control/channel_state.h"
@@ -109,6 +113,13 @@ bool DmaPusher::Step() {
             if (kepler_payload || macro_payload) {
                 const size_t words = std::min<size_t>(dma_state.method_count, header.size);
                 auto* const engine_state = subchannels[dma_state.subchannel];
+                if (macro_payload && VideoCommon::Nx2Census::Enabled()) {
+                    if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
+                        split.Defer([] { VideoCommon::Nx2Census::NextMacroFromRecord(); });
+                    } else {
+                        VideoCommon::Nx2Census::NextMacroFromRecord();
+                    }
+                }
                 // Parameters continued in an entry of their own can be arguments the GPU wrote
                 // (Donkey Kong Bananza's terrain: the culling pass counts each mesh's triangles
                 // into a 5-word indirect draw record and the colour pass draws with it). Read
@@ -169,6 +180,10 @@ bool DmaPusher::Step() {
                                              sizeof(prev_words));
                     LOG_DEBUG(HW_GPU, "  previous entry ends {:08x}; next entry starts {:08x}",
                               fmt::join(prev_words, " "), fmt::join(next_words, " "));
+                }
+                if (dma_state.method_count != 0 && header.addr != split_method_end &&
+                    header.size > dma_state.method_count) {
+                    WriteCapture("long entry inside a method");
                 }
                 if (park_split_methods) {
                     ResolveSplitMethod(header.addr);
@@ -527,6 +542,7 @@ void DmaPusher::FlushGpuWrittenCommands(GPUVAddr address, size_t size) {
 void DmaPusher::ReportUnboundSubchannel() {
     // Methods sent to a subchannel with no engine (no SetObject yet) are dropped.
     static std::atomic<u32> reported{};
+    WriteCapture("unbound subchannel");
     if (reported.fetch_add(1) < 8) {
         LOG_WARNING(HW_GPU, "Dropping method {:#x} on unbound subchannel {}", dma_state.method,
                     dma_state.subchannel);
@@ -551,8 +567,107 @@ void DmaPusher::CheckSubmitHash(const CommandListHeader& header, u64 submit_hash
     }
 }
 
+// EDEN_NX2_PB_CAPTURE=<file>: keep the words of the recent entries as they were parsed, with the
+// parser state before each entry. Write them at the first sign of a broken stream, or after
+// EDEN_NX2_PB_CAPTURE_AFTER=<n> entries. tools/nx2/debug/pbdecode.py reads the file.
+// Read at first use and not at program start: main() reads nx2_switches.txt first.
+static const std::string& CapturePath() {
+    static const std::string path = [] {
+        const char* value = std::getenv("EDEN_NX2_PB_CAPTURE");
+        return std::string{value != nullptr ? value : ""};
+    }();
+    return path;
+}
+struct CapturedEntry {
+    u64 raw;
+    u32 channel;
+    u32 index;
+    u32 total;
+    u32 subchannel;
+    u32 method;
+    u32 count;
+    bool non_incrementing;
+    bool increment_once;
+    u64 resume_offset;
+    bool gpu_written;
+    int changed; ///< 1 if the words differ from the submit, 0 if not, -1 with no submit hash
+    std::vector<u32> words;
+};
+static std::deque<CapturedEntry> g_captured;
+
+void DmaPusher::WriteCapture(const char* reason) {
+    static bool written = false;
+    if (CapturePath().empty() || written) {
+        return;
+    }
+    written = true;
+    std::FILE* file = std::fopen(CapturePath().c_str(), "w");
+    if (file == nullptr) {
+        return;
+    }
+    std::fprintf(file, "reason %s ch %u sub %u method 0x%x count %u\n", reason, channel_state.bind_id,
+                 dma_state.subchannel, dma_state.method, dma_state.method_count);
+    for (const CapturedEntry& entry : g_captured) {
+        std::fprintf(file, "E %u %u %u %016llx %u 0x%x %u %d %d %llu %d %d :", entry.channel, entry.index,
+                     entry.total, static_cast<unsigned long long>(entry.raw), entry.subchannel,
+                     entry.method, entry.count, entry.non_incrementing, entry.increment_once,
+                     static_cast<unsigned long long>(entry.resume_offset), entry.gpu_written, entry.changed);
+        for (const u32 word : entry.words) {
+            std::fprintf(file, " %08x", word);
+        }
+        std::fputc('\n', file);
+    }
+    std::fclose(file);
+    LOG_WARNING(HW_GPU, "Wrote the pushbuffer capture: {}", reason);
+}
+
 void DmaPusher::RecordParsedEntry(const CommandListHeader& header,
                                   std::span<const CommandHeader> commands) {
+    if (!CapturePath().empty()) {
+        CapturedEntry entry{
+            .raw = header.raw,
+            .channel = static_cast<u32>(channel_state.bind_id),
+            .index = static_cast<u32>(dma_pushbuffer_subindex),
+            .total = static_cast<u32>(dma_pushbuffer.front().command_lists.size()),
+            .subchannel = dma_state.subchannel,
+            .method = dma_state.method,
+            .count = dma_state.method_count,
+            .non_incrementing = dma_state.non_incrementing,
+            .increment_once = dma_increment_once,
+            .resume_offset = command_resume_offset,
+            .gpu_written = false,
+            .changed = -1,
+        };
+        entry.words.reserve(commands.size());
+        for (const CommandHeader& command : commands) {
+            entry.words.push_back(command.argument);
+        }
+        const GPUVAddr start = header.addr;
+        const GPUVAddr end = start + entry.words.size() * sizeof(u32);
+        for (GPUVAddr page = start & ~GPUVAddr{0xfff}; page < end; page += 0x1000) {
+            if (const auto device = memory_manager.GpuToCpuAddress(page);
+                device && Tegra::Nx2IsGpuWritten(*device)) {
+                entry.gpu_written = true;
+                break;
+            }
+        }
+        if (const auto& hashes = dma_pushbuffer.front().submit_hashes;
+            dma_pushbuffer_subindex < hashes.size()) {
+            entry.changed = HashPushbufferWords(entry.words) != hashes[dma_pushbuffer_subindex] ? 1 : 0;
+        }
+        g_captured.push_back(std::move(entry));
+        if (g_captured.size() > 40000) {
+            g_captured.pop_front();
+        }
+        static const u64 capture_after = [] {
+            const char* value = std::getenv("EDEN_NX2_PB_CAPTURE_AFTER");
+            return value != nullptr ? std::strtoull(value, nullptr, 10) : 0ULL;
+        }();
+        static u64 captured_total{};
+        if (++captured_total == capture_after) {
+            WriteCapture("requested entry count");
+        }
+    }
     if (!g_record_parsed_entries) {
         return;
     }
