@@ -230,12 +230,13 @@ void MemoryManager::Unmap(GPUVAddr gpu_addr, std::size_t size) {
     if (size == 0) {
         return;
     }
-    GetSubmappedRangeImpl<false>(gpu_addr, size, page_stash);
+    // Unmap also runs on service threads, and the GPU thread uses the member page_stash.
+    boost::container::small_vector<std::pair<DAddr, std::size_t>, 32> local_stash;
+    GetSubmappedRangeImpl<false>(gpu_addr, size, local_stash);
 
-    for (const auto& [map_addr, map_size] : page_stash) {
+    for (const auto& [map_addr, map_size] : local_stash) {
         rasterizer->UnmapMemory(map_addr, map_size);
     }
-    page_stash.clear();
 
     BigPageTableOp(gpu_addr, 0, size, PTEKind::INVALID, EntryType::Free);
     PageTableOp(gpu_addr, 0, size, PTEKind::INVALID, EntryType::Free);
