@@ -92,6 +92,7 @@
 
 #include "qt_common/abstract/frontend.h"
 
+#include "qt_common/game_list/worker.h"
 #include "qt_common/qt_common.h"
 #include "qt_common/qt_string_lookup.h"
 
@@ -2044,9 +2045,17 @@ void MainWindow::BootGame(const QString& filename, Service::AM::FrontendAppletPa
         title_name = metadata.first->GetApplicationName();
     }
     if (res != Loader::ResultStatus::Success || title_name.empty()) {
+        title_name = LooseExeFSName(filename.toStdString()).toStdString();
+    }
+    if (title_name.empty()) {
         title_name = Common::FS::PathToUTF8String(
             std::filesystem::path{Common::U16StringFromBuffer(filename.utf16(), filename.size())}
                 .filename());
+    }
+    if (title_version.empty()) {
+        title_version =
+            LooseDumpVersion(filename.toStdString(), QtCommon::system->GetAppLoader())
+                .toStdString();
     }
     const bool is_64bit = QtCommon::system->Kernel().ApplicationProcess()->Is64Bit();
     const auto instruction_set_suffix = is_64bit ? tr("(64-bit)") : tr("(32-bit)");
@@ -4123,6 +4132,21 @@ void MainWindow::OnApplicationChanged(u64 program_id) {
     if (const auto metadata = pm.GetControlMetadata(); metadata.first != nullptr) {
         title_version = metadata.first->GetVersionString();
         title_name = metadata.first->GetApplicationName();
+    }
+    // Loose dumps have no installed metadata, so read what the boot path found for this program.
+    if (title_name.empty()) {
+        auto& loader = QtCommon::system->GetAppLoader();
+        if (u64 loaded_id = 0; loader.ReadProgramId(loaded_id) == Loader::ResultStatus::Success &&
+                               loaded_id == program_id) {
+            const auto game_path = current_game_path.toStdString();
+            if (loader.ReadTitle(title_name) != Loader::ResultStatus::Success ||
+                title_name.empty()) {
+                title_name = LooseExeFSName(game_path).toStdString();
+            }
+            if (title_version.empty()) {
+                title_version = LooseDumpVersion(game_path, loader).toStdString();
+            }
+        }
     }
     if (title_name.empty()) {
         title_name = fmt::format("{:016X}", program_id);

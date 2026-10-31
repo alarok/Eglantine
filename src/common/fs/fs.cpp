@@ -430,6 +430,7 @@ void IterateDirEntries(const std::filesystem::path& path, const DirEntryCallable
         || (True(filter & DirEntryFilter::Directory) && entry.status().type() == fs::file_type::directory)) {
             if (!callback(entry)) {
                 callback_error = true;
+                break;
             }
         }
     }
@@ -463,6 +464,7 @@ void IterateDirEntriesRecursively(const std::filesystem::path& path, const DirEn
         || (True(filter & DirEntryFilter::Directory) && entry.status().type() == fs::file_type::directory)) {
             if (!callback(entry)) {
                 callback_error = true;
+                break;
             }
         }
     }
