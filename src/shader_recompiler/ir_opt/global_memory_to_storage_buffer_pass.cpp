@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2021 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <optional>
 #include <unordered_map>
 
@@ -375,6 +376,40 @@ std::optional<StorageBufferAddr> Track(const IR::Value& value, const Bias* bias)
     return BreadthFirstSearch(value, pred);
 }
 
+/// Returns true when an address reaches a constant buffer word with no memory load between them.
+/// If not, the address was loaded from memory. Track then finds the constant buffer that holds the
+/// pointer list, which is not the buffer that the store writes, so the store is lost.
+bool ReachesCbufWithoutLoad(const IR::Value& address) {
+    if (address.IsImmediate()) {
+        return false;
+    }
+    small_vector<const IR::Inst*, 32> pending{address.InstRecursive()};
+    small_vector<const IR::Inst*, 64> visited;
+    while (!pending.empty()) {
+        const IR::Inst* const inst{pending.back()};
+        pending.pop_back();
+        const IR::Opcode opcode{inst->GetOpcode()};
+        if (opcode == IR::Opcode::GetCbufU32 || opcode == IR::Opcode::GetCbufU32x2) {
+            return true;
+        }
+        if (IsGlobalMemory(*inst)) {
+            continue;
+        }
+        for (size_t arg = 0; arg < inst->NumArgs(); ++arg) {
+            const IR::Value value{inst->Arg(arg)};
+            if (value.IsImmediate()) {
+                continue;
+            }
+            const IR::Inst* const next{value.InstRecursive()};
+            if (std::find(visited.begin(), visited.end(), next) == visited.end()) {
+                visited.push_back(next);
+                pending.push_back(next);
+            }
+        }
+    }
+    return false;
+}
+
 /// Collects the storage buffer used by a global memory instruction and the instruction itself
 void CollectStorageBuffers(IR::Block& block, IR::Inst& inst, StorageInfo& info) {
     // NVN puts storage buffers in a specific range, we have to bias towards these addresses to
@@ -385,10 +420,14 @@ void CollectStorageBuffers(IR::Block& block, IR::Inst& inst, StorageInfo& info) 
         .offset_end = 0x700,
         .alignment = 16,
     };
+    auto& store_counts{ThreadGlobalStoreCounts()};
+    const bool is_store{IsGlobalMemoryWrite(inst)};
+    store_counts.total += is_store ? 1 : 0;
     // Track the low address of the instruction
     const std::optional<LowAddrInfo> low_addr_info{TrackLowAddress(&inst)};
     if (!low_addr_info) {
         // Failed to track the low address, use NVN fallbacks
+        store_counts.lost += is_store ? 1 : 0;
         return;
     }
     // First try to find storage buffers in the NVN address
@@ -412,10 +451,14 @@ void CollectStorageBuffers(IR::Block& block, IR::Inst& inst, StorageInfo& info) 
         if (!storage_buffer) {
             // If that also fails, use NVN fallbacks
             LOG_WARNING(Shader, "Storage buffer failed to track, using global memory fallbacks");
+            store_counts.lost += is_store ? 1 : 0;
             return;
         }
         LOG_DEBUG(Shader, "Storage buffer tracked without bias, index {} offset {}",
                     storage_buffer->index, storage_buffer->offset);
+    }
+    if (is_store && !ReachesCbufWithoutLoad(low_addr)) {
+        ++store_counts.lost;
     }
     // Collect storage buffer and the instruction
     if (IsGlobalMemoryWrite(inst)) {
@@ -540,6 +583,11 @@ void Replace(IR::Block& block, IR::Inst& inst, const IR::U32& storage_index,
     }
 }
 } // Anonymous namespace
+
+GlobalStoreCounts& ThreadGlobalStoreCounts() {
+    thread_local GlobalStoreCounts counts{};
+    return counts;
+}
 
 void GlobalMemoryToStorageBufferPass(IR::Program& program, const HostTranslateInfo& host_info) {
     StorageInfo info;

@@ -26,6 +26,7 @@
 #include "shader_recompiler/frontend/maxwell/control_flow.h"
 #include "shader_recompiler/frontend/maxwell/translate_program.h"
 #include "shader_recompiler/ir_opt/passes.h"
+#include "video_core/nx2_census.h"
 #include "shader_recompiler/program_header.h"
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/engines/maxwell_3d.h"
@@ -893,6 +894,7 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline(
 
         const u32 cfg_offset{static_cast<u32>(env.StartAddress() + sizeof(Shader::ProgramHeader))};
         Shader::Maxwell::Flow::CFG cfg(env, pools.flow_block, cfg_offset, index == 0);
+        Shader::Optimization::ThreadGlobalStoreCounts() = {};
         if (!uses_vertex_a || index != 1) {
             // Normal path
             programs[index] = TranslateProgram(pools.inst, pools.block, env, cfg, host_info);
@@ -901,6 +903,11 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline(
             auto& program_va{programs[0]};
             auto program_vb{TranslateProgram(pools.inst, pools.block, env, cfg, host_info)};
             programs[index] = MergeDualVertexPrograms(program_va, program_vb, env);
+        }
+        if (VideoCommon::Nx2Census::Enabled()) {
+            const auto stores{Shader::Optimization::ThreadGlobalStoreCounts()};
+            VideoCommon::Nx2Census::LostStores(key.unique_hashes[index], index, stores.lost, stores.total,
+                                               programs[index].info.storage_buffers_descriptors.size());
         }
 
         if (device.GetDriverID() != VK_DRIVER_ID_NVIDIA_PROPRIETARY && Shader::Optimization::HasBrokenPattern(programs[index])) {
@@ -1086,7 +1093,13 @@ std::unique_ptr<ComputePipeline> PipelineCache::CreateComputePipeline(
         env.Dump(hash, key.unique_hash);
     }
 
+    Shader::Optimization::ThreadGlobalStoreCounts() = {};
     auto program{TranslateProgram(pools.inst, pools.block, env, cfg, host_info)};
+    if (VideoCommon::Nx2Census::Enabled()) {
+        const auto stores{Shader::Optimization::ThreadGlobalStoreCounts()};
+        VideoCommon::Nx2Census::LostStores(key.unique_hash, 5, stores.lost, stores.total,
+                                           program.info.storage_buffers_descriptors.size());
+    }
     const VkDriverIdKHR driver_id = device.GetDriverID();
     const bool needs_shared_mem_clamp =
         driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY ||

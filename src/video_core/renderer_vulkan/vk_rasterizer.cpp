@@ -50,6 +50,7 @@
 #include "video_core/texture_cache/texture_cache_base.h"
 #include "video_core/vulkan_common/vulkan_device.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
+#include "video_core/nx2_census.h"
 #include "video_core/nx2_profile.h"
 
 namespace Vulkan {
@@ -253,6 +254,9 @@ void RasterizerVulkan::PrepareDraw(bool is_indexed, Func&& draw_func) {
         if (native.native_turing && !submitted) {
             native.native_execution_failed = true;
             LOG_DEBUG(HW_GPU, "Native graphics draw failed; refusing submission completion");
+        }
+        if (VideoCommon::Nx2Census::Enabled() && !submitted) {
+            VideoCommon::Nx2Census::Add(VideoCommon::Nx2Census::Count::Failed);
         }
     };
     namespace Profile = VideoCommon::Nx2Profile;
@@ -946,6 +950,15 @@ void RasterizerVulkan::Clear(u32 layer_count) {
 
 void RasterizerVulkan::DispatchCompute() {
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::Compute};
+    bool dispatched = false;
+    SCOPE_EXIT {
+        if (VideoCommon::Nx2Census::Enabled()) {
+            VideoCommon::Nx2Census::Add(VideoCommon::Nx2Census::Count::Dispatches);
+            if (!dispatched) {
+                VideoCommon::Nx2Census::Add(VideoCommon::Nx2Census::Count::DispatchesFailed);
+            }
+        }
+    };
     FlushWork();
     gpu_memory->FlushCaching();
 
@@ -977,6 +990,7 @@ void RasterizerVulkan::DispatchCompute() {
             }
             cmdbuf.DispatchIndirect(indirect_buffer, indirect_offset);
         });
+        dispatched = true;
         return;
     }
     const std::array<u32, 3> dim{qmd.grid_dim_x, qmd.grid_dim_y, qmd.grid_dim_z};
@@ -984,6 +998,7 @@ void RasterizerVulkan::DispatchCompute() {
     if (dim[0] > max_dim[0] || dim[1] > max_dim[1] || dim[2] > max_dim[2]) {
         return;
     }
+    dispatched = true;
     scheduler.RequestOutsideRenderPassOperationContext();
     static constexpr VkMemoryBarrier READ_BARRIER{
         .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,

@@ -21,6 +21,7 @@
 #include "video_core/gpu.h"
 #include "video_core/gpu_split.h"
 #include "video_core/memory_manager.h"
+#include "video_core/nx2_census.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/rasterizer_interface.h"
 #include "video_core/textures/texture.h"
@@ -433,9 +434,15 @@ void Maxwell3D::CallMacroMethod(Core::System& system, u32 method, std::span<cons
     const u32 entry =
         ((method - MacroRegistersStart) >> 1) % static_cast<u32>(GetNativeMacroPositions().size());
 
+    if (VideoCommon::Nx2Census::Enabled()) {
+        VideoCommon::Nx2Census::MacroBegin(GetNativeMacroPositions()[entry]);
+    }
     // Execute the current macro.
     GetNativeMacroEngine().Execute(system, *this, GetNativeMacroPositions()[entry], parameters);
     draw_manager.DrawDeferred(*this);
+    if (VideoCommon::Nx2Census::Enabled()) {
+        VideoCommon::Nx2Census::MacroEnd();
+    }
 }
 
 // EDEN_NX2_3D_METHODS: log the first write to each 3D register (finds methods Eden doesn't model).
@@ -1073,6 +1080,9 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
     auto& engine = GetNativeMacroEngine();
     const auto positions = GetNativeMacroPositions();
     const u32 start = positions[((method - MacroRegistersStart) >> 1) % positions.size()];
+    if (VideoCommon::Nx2Census::Enabled()) {
+        split.Defer([start] { VideoCommon::Nx2Census::MacroBegin(start); });
+    }
     {
         VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::Macro};
         engine.native_interpreter.active_dram = &native_data_ram;
@@ -1106,6 +1116,9 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
         fs.draw_pending = false;
         split.Defer([this, system_ptr = &system] { FinishFrontMacro(*system_ptr); });
     }
+    if (VideoCommon::Nx2Census::Enabled()) {
+        split.Defer([] { VideoCommon::Nx2Census::MacroEnd(); });
+    }
     if (FrontVerifyEnabled() && (++fs.calls & 4095) == 0) [[unlikely]] {
         FrontVerify(split, fs);
     }
@@ -1119,6 +1132,9 @@ void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 m
                              u32 count) {
     // The words may be written by methods still queued for the back (indirect draw arguments
     // from a culling dispatch), and the caches that may hold newer ones belong to it.
+    if (VideoCommon::Nx2Census::Enabled()) {
+        split.Defer([] { VideoCommon::Nx2Census::MacroRead(); });
+    }
     split.Drain();
     const GPUVAddr source = (GPUVAddr{fs.regs[0x154] & 0x1ffffff} << 32) | fs.regs[0x155];
     const u32 ram = fs.regs[0x156];

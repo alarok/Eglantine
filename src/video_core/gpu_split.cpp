@@ -23,6 +23,7 @@
 #include "video_core/engines/engine_interface.h"
 #include "video_core/gpu_split.h"
 #include "video_core/nx2.h"
+#include "video_core/nx2_census.h"
 #include "video_core/nx2_profile.h"
 
 namespace VideoCommon {
@@ -319,6 +320,7 @@ void GpuSplit::BackLoop(std::stop_token stop_token) {
     u64 read_position = 0;
     while (!stop_token.stop_requested()) {
         Nx2Profile::Report("GPU back thread");
+        Nx2Census::Report();
         u64 available = published.load(std::memory_order_acquire);
         if (available == read_position) {
             Nx2Profile::Scope scope{Nx2Profile::Zone::SplitWait};

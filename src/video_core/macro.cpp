@@ -37,6 +37,7 @@
 #include "common/bit_field.h"
 #include "common/logging.h"
 #include "video_core/engines/maxwell_3d.h"
+#include "video_core/nx2_census.h"
 #include "video_core/nx2_profile.h"
 
 namespace Tegra {
@@ -1416,6 +1417,9 @@ void MacroEngine::Execute(Core::System& system, Engines::Maxwell3D& maxwell3d, u
                 constexpr u32 DmaRead = 0x157, DmaReadFifoed = 0x158;
                 if (address == DmaRead || address == DmaReadFifoed) {
                     read_memory = true;
+                    if (VideoCommon::Nx2Census::Enabled()) {
+                        VideoCommon::Nx2Census::MacroRead();
+                    }
                     const GPUVAddr source = (GPUVAddr{maxwell3d.GetRegisterValue(MemAddressA) & 0x1ffffff} << 32) |
                                             maxwell3d.GetRegisterValue(MemAddressB);
                     auto& memory = maxwell3d.GetMemoryManager();

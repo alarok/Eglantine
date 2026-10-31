@@ -21,6 +21,13 @@ void ConstantPropagationPass(Environment& env, IR::Program& program);
 void DeadCodeEliminationPass(IR::Program& program);
 void GeometryCompactionPass(IR::Program& program, const HostTranslateInfo& host_info);
 void GlobalMemoryToStorageBufferPass(IR::Program& program, const HostTranslateInfo& host_info);
+/// Stores that the storage buffer pass saw on this thread since the caller last reset the counts.
+/// A lost store is one the pass cannot map: it can reach only the buffers the program binds.
+struct GlobalStoreCounts {
+    u32 total;
+    u32 lost;
+};
+GlobalStoreCounts& ThreadGlobalStoreCounts();
 void IdentityRemovalPass(IR::Program& program);
 void LowerFp64ToFp32(IR::Program& program);
 void LowerFp16ToFp32(IR::Program& program);

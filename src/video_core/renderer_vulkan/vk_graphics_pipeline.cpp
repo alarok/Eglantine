@@ -29,6 +29,7 @@
 #include "video_core/vulkan_common/vulkan_device.h"
 #include "video_core/gpu_logging/gpu_logging.h"
 #include "common/settings.h"
+#include "video_core/nx2_census.h"
 #include "video_core/nx2_profile.h"
 
 #if defined(__clang__) && defined(NDEBUG)
@@ -463,6 +464,37 @@ bool GraphicsPipeline::ConfigureImpl(bool is_indexed) {
         Profile::Scope scope{Profile::Zone::FillImageViews};
         texture_cache.FillImageViews(std::span(views.data(), views.size()), false,
                                      Spec::has_images);
+    }
+    if (VideoCommon::Nx2Census::Enabled()) {
+        namespace Census = VideoCommon::Nx2Census;
+        bool sampling = false;
+        for (const VideoCommon::ImageViewInOut& view : views) {
+            if (view.id == VideoCommon::NULL_IMAGE_VIEW_ID) {
+                Census::Add(Census::Count::NullViews);
+                continue;
+            }
+            const VideoCommon::ImageId image_id = texture_cache.GetImageView(view.id).image_id;
+            if (!image_id) {
+                continue; // A buffer view
+            }
+            const Image& image = texture_cache.GetImage(image_id);
+            if (False(image.flags & (VideoCommon::ImageFlagBits::Unbacked |
+                                     VideoCommon::ImageFlagBits::SparseLayers))) {
+                continue;
+            }
+            sampling = true;
+            const auto kind = True(image.flags & VideoCommon::ImageFlagBits::SparseLayers)
+                                  ? Census::ImageKind::ByLayer
+                              : True(image.flags & VideoCommon::ImageFlagBits::UnwrittenSparse)
+                                  ? Census::ImageKind::Unwritten
+                                  : Census::ImageKind::TooBig;
+            Census::CountImage(image.gpu_addr, kind, image.info.size.width, image.info.size.height,
+                               static_cast<u32>(image.info.resources.layers),
+                               static_cast<u32>(image.info.format));
+        }
+        if (sampling) {
+            Census::Add(Census::Count::DrawsSampling);
+        }
     }
 
     VideoCommon::ImageViewInOut* texture_buffer_it{views.data()};
