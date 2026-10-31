@@ -89,6 +89,7 @@ Use isolated portable profiles for game tests.
 Keep original saves, keys, firmware, and shader caches intact.
 Run one heavy emulator at a time. Stop only processes owned by the current test.
 Reuse capture, replay, and diagnostic tools before repeating slow game runs.
+Use `tools/nx2/debug/` (see its README) to find a silent fault from a log: the draw census, lost shader stores, the command stream capture, and `logdiff.py`.
 Compare the same scene and settings before claiming a performance gain.
 Preserve draw coverage and report rejected work, crashes, and visual regressions.
 Inspect native presented frames before claiming a visual fix.
