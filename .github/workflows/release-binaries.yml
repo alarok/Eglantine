@@ -332,7 +332,12 @@ jobs:
     needs:
       - build
       - required-validation
-    if: github.event_name == 'push' || inputs.publish_release
+    # The classify job is skipped on these runs. Without a status function here, GitHub also skips
+    # each job that depends on it, directly or not.
+    if: >-
+      ${{ !cancelled() && needs.build.result == 'success' &&
+      needs.required-validation.result == 'success' &&
+      (github.event_name == 'push' || inputs.publish_release) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
