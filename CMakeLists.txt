@@ -747,3 +747,5 @@ if (YUZU_INSTALL_UDEV_RULES)
     install(FILES "dist/72-eden-input.rules"
         DESTINATION "${CMAKE_INSTALL_LIBDIR}/udev/rules.d")
 endif()
+
+include(MsvcIncludePrefixGuard)

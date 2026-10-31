@@ -71,6 +71,18 @@ A full build takes about 45 minutes, so do not make other work wait for one.
 Build success does not prove game compatibility or increased FPS.
 See `tools/nx2/upstream_sync.md` for workflow behavior and release triggers.
 
+## Windows builds with localized MSVC
+
+Start each script that configures or builds with `chcp 65001 >nul`. Use it for both steps.
+MSVC writes its localized `/showIncludes` prefix in the output code page of the console.
+CMake writes the same prefix to `rules.ninja` in the code page of the console that configures.
+If the bytes differ, Ninja records no headers, and a header change does not rebuild the object.
+Agent shells can have different code pages. Never assume that two shells match.
+`CMakeModules/MsvcIncludePrefixGuard.cmake` stops such a build before the first compile.
+The guard cannot repair old records. To find them, run `ninja -C <build> -t deps` and look for `#deps 0`.
+A zero is correct when an object includes only system headers, or when `#ifdef` removes its includes.
+Delete the other objects and build again.
+
 ## Runtime evidence
 
 Use isolated portable profiles for game tests.
