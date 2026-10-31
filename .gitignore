@@ -67,3 +67,12 @@ vulkansdk*.exe
 
 # Build-time generated external sources
 externals/generated
+
+# Console dumps and keys. These must not go in the repository.
+/firmware/
+*.keys
+*.nca
+*.nso
+*.npdm
+*.xci
+*.nsp
