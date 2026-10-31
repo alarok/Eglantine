@@ -158,7 +158,7 @@ Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. P
 | `gui_settings_runs.ps1 -Label <l> -Variants <v> -Seconds <n>` | Bananza from Deku's save point. The log is `<l>-bananza-c\<v>\user\log\eden_log.txt`, the sheet is `<l>-bananza-c\thumbs.png`. |
 | `regress_run.ps1 -Label <l> -Game <mkw-c or pokopia> -Variant <v> -Item <item or none>` | Another game, with an A/B inside the run. It has the GPU profile on. |
 | `mkw_race.ps1 -Exe <exe> -Label <l> [-Seconds 300]` | A driven race of Mario Kart World: the taps reach the first Grand Prix race, and A stays down from 126 s. Smart steering drives two laps. The log is `<l>-mkw-c\seed-acc0-nr\user\log\eden_log.txt`. The kart in `seed-acc0` runs stays at the start line, so use this script for race numbers. Two equal runs differ by 2.7 ms, because the race changes each time. So compare builds with more than one run each. |
-| `race_series.ps1 race5=<exe> race6=<exe> ...`, `race_means.py <label> ...` | Run a series of races and print the mean frame time after 140 s, the stalls and the draws per picture. The folder of each exe goes first on `PATH`, so a CI build finds its DLLs. |
+| `race_series.ps1 race5=<exe> race6=<exe> ...`, `race_means.py <label> ...`, `race_stalls.py <label> ...` | Run a series of races and print the mean frame time after 140 s, the stalls and the draws per picture. The folder of each exe goes first on `PATH`, so a CI build finds its DLLs. |
 | `matrix.py` | Defines the variants. `owner-cold` is Deku's settings with an empty cache, `seed-acc0` is Fast, `seed` is Accurate. |
 | `halo_run.ps1`, `camera_run.ps1` + `camera_report.py`, `rdoc_run.ps1` | Halo count, camera sweep, read a RenderDoc capture. |
 

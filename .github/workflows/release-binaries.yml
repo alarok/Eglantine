@@ -697,4 +697,4 @@ jobs:
           Steam Deck: use the -steamdeck-pgo AppImage. It is compiled for Zen 2, so it does not start on older CPUs or on Intel CPUs.
           macOS (Apple Silicon, experimental and not tested): open the dmg and drag Eglantine to Applications. It has no Apple signature, so run: xattr -dr com.apple.quarantine /Applications/eglantine.app
           Linux aarch64 (experimental and not tested): use the -aarch64 files. An experimental file is missing if its build failed.
-          The -pgo builds are the same programs compiled with profile-guided optimization (clang plus Eden's profile); prefer them when your CPU supports it. The Windows PGO build is a MinGW build, so it carries its own DLLs and needs no Visual C++ redistributable."
+          The -pgo builds are the same programs compiled with profile-guided optimization (clang plus Eden's profile). On Windows, use the normal zip: in our driven race on one PC, the -pgo zip had the same frame time and more stalls. The Windows PGO build is a MinGW build, so it carries its own DLLs and needs no Visual C++ redistributable."
