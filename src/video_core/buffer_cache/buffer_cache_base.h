@@ -28,7 +28,6 @@
 #include "common/lru_cache.h"
 #include "common/range_sets.h"
 #include "common/scope_exit.h"
-#include "common/nx2_ab.h"
 #include "common/settings.h"
 #include "common/slot_vector.h"
 #include "video_core/buffer_cache/buffer_base.h"
@@ -251,7 +250,7 @@ public:
     /// Without downloads at every fence, a guest CPU read is the only way GPU-written buffer
     /// data reaches guest memory, so reads must ask the buffer cache (GetFlushArea).
     bool FlushesOnCpuRead() const {
-        return !AsyncBufferDownloads() && Common::Nx2Ab::On("readback");
+        return !AsyncBufferDownloads();
     }
 
     bool InlineMemory(DAddr dest_address, size_t copy_size, std::span<const u8> inlined_buffer);
@@ -552,9 +551,7 @@ private:
     /// has read (Preflushable, set by the first reactive flush) always are: later reads skip the
     /// flush and rely on these downloads, e.g. collision meshes skinned by compute shaders.
     bool DownloadsAtFence(DAddr device_addr, u64 size) noexcept {
-        return AsyncBufferDownloads() ||
-               (Common::Nx2Ab::On("readback") &&
-                memory_tracker.IsRegionPreflushable(device_addr, size));
+        return AsyncBufferDownloads() || memory_tracker.IsRegionPreflushable(device_addr, size);
     }
 
     /// GPU writes that are not downloaded at fences: trap the guest CPU's next read of their
