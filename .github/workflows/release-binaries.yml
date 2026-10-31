@@ -92,6 +92,12 @@ jobs:
           - platform: linux-x86_64-pgo
             runner: ubuntu-24.04
             pgo: true
+          # The same PGO build, compiled for the Steam Deck CPU (Zen 2). It runs on Zen 2 and newer
+          # AMD CPUs only.
+          - platform: linux-x86_64-steamdeck-pgo
+            runner: ubuntu-24.04
+            pgo: true
+            preset: zen2
           - platform: windows-x86_64
             runner: windows-2022
           - platform: windows-x86_64-pgo
@@ -265,6 +271,9 @@ jobs:
               "-DCMAKE_C_FLAGS=$profile"
               "-DCMAKE_CXX_FLAGS=$profile"
             )
+          fi
+          if [ -n '${{ matrix.preset }}' ]; then
+            flags+=("-DYUZU_BUILD_PRESET=${{ matrix.preset }}")
           fi
           cmake -S . -B build/release -G Ninja "${flags[@]}"
 
@@ -562,4 +571,5 @@ jobs:
 
           Windows: extract the zip and run eglantine.exe, or eden-cli.exe from a terminal.
           Linux: make the AppImage executable (chmod +x) and run it; it bundles its libraries and needs glibc 2.39 or newer (Ubuntu 24.04, Fedora 40, Debian 13, Arch).
+          Steam Deck: use the -steamdeck-pgo AppImage. It is compiled for Zen 2, so it does not start on older CPUs or on Intel CPUs.
           The -pgo builds are the same programs compiled with profile-guided optimization (clang plus Eden's profile); prefer them when your CPU supports it. The Windows PGO build is a MinGW build, so it carries its own DLLs and needs no Visual C++ redistributable."

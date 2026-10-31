@@ -18,6 +18,12 @@ Commands:
     minmax <event> <resource>   Print the range of each mip at this event.
     trace <resource> [mip]      Print the highest value after each event that writes this resource.
     cbuf <event> [count]        Print the first floats of the pixel shader constant buffers.
+    nanmap <event> <resource>   Print the NaN and infinite pixels of an R11G11B10 resource.
+    nanfind <resource> <first> <last> [nan_only]  Find the first action that leaves such pixels.
+    debugnan <event> <x> <y> [limit]  Debug the pixel shader at one pixel. Print the first NaN steps.
+    postvs <event> [limit]      Print the vertices with NaN outputs. Debug the first one.
+    vinputs <event> [first] [count]  Print the vertex layout and the raw vertex data of a draw.
+    bufwatch <buffer> <offset> <size> [stride]  Print each use of a buffer that changes these bytes.
     copies <first> <last>       Print the source and the destination of each copy.
     mips <event> <resource>     Save each mip at this event.
 A resource is a number from textures.txt. RDOC_OUT receives report.txt. A failed command writes its
@@ -231,6 +237,211 @@ class Session:
             data = self.controller.GetBufferData(descriptor.resource, descriptor.byteOffset, count * 4)
             values = struct.unpack("<%df" % (len(data) // 4), data[:len(data) // 4 * 4])
             say("  slot %d: %s" % (used.access.index, ["%.5g" % value for value in values]))
+
+    def broken_pixels(self, number, event):
+        """Return the NaN pixels and the infinite pixels of an R11G11B10 resource at this event."""
+        tex = self.textures[number]
+        self.controller.SetFrameEvent(event, True)
+        data = self.controller.GetTextureData(tex.resourceId, rd.Subresource(0, 0, 0))
+        nans = []
+        infs = []
+        for index, (value,) in enumerate(struct.iter_unpack("<I", data)):
+            if value & 0x7C0 == 0x7C0 or value & 0x1F0000 == 0x1F0000 or value & 0xF8000000 == 0xF8000000:
+                r, g, b = value & 0x7FF, (value >> 11) & 0x7FF, value >> 22
+                odd = (r >= 0x7C0 and r & 0x3F) or (g >= 0x7C0 and g & 0x3F) or (b >= 0x3E0 and b & 0x1F)
+                (nans if odd else infs).append(index)
+        return nans, infs
+
+    def nanmap(self, event, number):
+        """Print the count and the place of the NaN and infinite pixels of a resource at this event."""
+        width = self.textures[number].width
+        nans, infs = self.broken_pixels(number, event)
+        say("--- %s at %d: nan %d, inf %d" % (self.texture_text(number), event, len(nans), len(infs)))
+        for name, pixels in (("nan", nans), ("inf", infs)):
+            if pixels:
+                xs = [index % width for index in pixels]
+                ys = [index // width for index in pixels]
+                say("  %s box %d %d to %d %d, samples %s" % (
+                    name, min(xs), min(ys), max(xs), max(ys),
+                    [(index % width, index // width) for index in pixels[:: max(1, len(pixels) // 6)]][:6]))
+
+    def nanfind(self, number, first, last, nan_only=0):
+        """Find the first action in this event range after which a resource holds NaN or infinite pixels.
+
+        With nan_only set, the search ignores infinite pixels.
+        """
+        events = [action for action in walk(self.controller.GetRootActions()) if first <= action.eventId <= last]
+        low, high = 0, len(events) - 1
+        say("--- nanfind %s, %d actions" % (self.texture_text(number), len(events)))
+        while low < high:
+            middle = (low + high) // 2
+            nans, infs = self.broken_pixels(number, events[middle].eventId)
+            say("  %d: nan %d, inf %d" % (events[middle].eventId, len(nans), len(infs)))
+            if nans or (infs and not nan_only):
+                high = middle
+            else:
+                low = middle + 1
+        say("  first: %d %s" % (events[low].eventId, events[low].GetName(self.structured)[:60]))
+        self.nanmap(events[low].eventId, number)
+
+    def debugnan(self, event, x, y, limit=12):
+        """Debug the pixel shader of this event at one pixel. Print the first steps that make NaN or Inf."""
+        self.controller.SetFrameEvent(event, True)
+        trace = self.controller.DebugPixel(x, y, rd.DebugPixelInputs())
+        if trace.debugger is None:
+            say("--- debugnan %d %d %d: no debugger, %s" % (event, x, y, "the pixel has no hit or no support"))
+            return
+        say("--- debugnan %d at %d %d" % (event, x, y))
+        self.walk_trace(trace, rd.ShaderStage.Pixel, limit)
+
+    def postvs(self, event, limit=8):
+        """Print the vertices with NaN outputs at this draw. Debug the vertex shader of the first one."""
+        self.controller.SetFrameEvent(event, True)
+        action = next(item for item in walk(self.controller.GetRootActions()) if item.eventId == event)
+        mesh = self.controller.GetPostVSData(0, 0, rd.MeshDataStage.VSOut)
+        stride = mesh.vertexByteStride
+        data = self.controller.GetBufferData(mesh.vertexResourceId, mesh.vertexByteOffset, 0)
+        count = len(data) // stride
+        say("--- postvs %d: indices %d, stored vertices %d, stride %d" % (event, mesh.numIndices, count, stride))
+        pipe = self.controller.GetPipelineState()
+        for signature in pipe.GetShaderReflection(rd.ShaderStage.Vertex).outputSignature:
+            say("  output %s reg %d comps %d" % (signature.varName, signature.regIndex, signature.compCount))
+        bad = {}
+        for vertex in range(count):
+            floats = struct.unpack_from("<%df" % (stride // 4), data, vertex * stride)
+            odd = [slot * 4 for slot, value in enumerate(floats) if value != value or abs(value) == float("inf")]
+            if odd:
+                bad[vertex] = odd
+        say("  vertices with NaN or Inf: %d" % len(bad))
+        for vertex in sorted(bad)[:limit]:
+            say("    vertex %d byte offsets %s" % (vertex, bad[vertex]))
+        if not bad:
+            return
+        mesh_indices = range(mesh.numIndices)
+        if mesh.indexResourceId != rd.ResourceId.Null():
+            mesh_indices = struct.unpack("<%d%s" % (mesh.numIndices, {1: "B", 2: "H", 4: "I"}[mesh.indexByteStride]),
+                                         self.controller.GetBufferData(mesh.indexResourceId, mesh.indexByteOffset,
+                                                                       mesh.numIndices * mesh.indexByteStride))
+        position = next(index for index, vertex in enumerate(mesh_indices) if vertex in bad)
+        buffer = pipe.GetIBuffer()
+        width = buffer.byteStride
+        raw = self.controller.GetBufferData(buffer.resourceId, buffer.byteOffset + (action.indexOffset + position) * width, width)
+        index = int.from_bytes(raw, "little")
+        say("  first bad index position %d, index %d, base vertex %d" % (position, index, action.baseVertex))
+        trace = self.controller.DebugVertex(index + action.baseVertex, 0, index, 0)
+        if trace.debugger is None:
+            say("  no debugger for this vertex")
+            return
+        self.walk_trace(trace, rd.ShaderStage.Vertex, limit)
+
+    def vinputs(self, event, first=0, count=40):
+        """Print the vertex layout of this draw and the raw vertex data."""
+        self.controller.SetFrameEvent(event, True)
+        pipe = self.controller.GetPipelineState()
+        buffers = pipe.GetVBuffers()
+        inputs = pipe.GetVertexInputs()
+        action = next(item for item in walk(self.controller.GetRootActions()) if item.eventId == event)
+        say("--- vinputs %d: base vertex %d, index offset %d" % (event, action.baseVertex, action.indexOffset))
+        for index, buffer in enumerate(buffers):
+            if rid_number(buffer.resourceId):
+                say("  buffer %d: %d (%s) offset %d stride %d" % (index, rid_number(buffer.resourceId),
+                                                                 self.names.get(rid_number(buffer.resourceId), "?"),
+                                                                 buffer.byteOffset, buffer.byteStride))
+        for attribute in inputs:
+            if attribute.used:
+                say("  input %s: buffer %d offset %d format %s" % (attribute.name, attribute.vertexBuffer,
+                                                                   attribute.byteOffset, attribute.format.Name()))
+        for vertex in range(first, first + count):
+            parts = []
+            for attribute in inputs:
+                if not attribute.used:
+                    continue
+                buffer = buffers[attribute.vertexBuffer]
+                start = buffer.byteOffset + (vertex + action.baseVertex) * buffer.byteStride + attribute.byteOffset
+                raw = self.controller.GetBufferData(buffer.resourceId, start, attribute.format.ElementSize())
+                text = raw.hex()
+                if "32G32B32" in attribute.format.Name() and attribute.format.compType == rd.CompType.Float:
+                    text = "%.4g %.4g %.4g" % struct.unpack_from("<3f", raw)
+                parts.append("%s=%s" % (attribute.name, text))
+            say("  v%d %s" % (vertex, " ".join(parts)))
+
+    def bufwatch(self, number, offset, size, stride=64):
+        """Print each use of this buffer that changes the given bytes. Print the first float of each changed record."""
+        rid = next(buffer.resourceId for buffer in self.controller.GetBuffers() if rid_number(buffer.resourceId) == number)
+        uses = self.controller.GetUsage(rid)
+        say("--- bufwatch %d offset %d size %d: %d uses" % (number, offset, size, len(uses)))
+        self.controller.SetFrameEvent(1, True)
+        last = self.controller.GetBufferData(rid, offset, size)
+        say("  at the start, x of each record: %s" % ["%.4g" % value for value in struct.unpack_from(
+            "<%df" % (size // 4), last)][:: stride // 4][:40])
+        seen = set()
+        for use in uses:
+            if use.eventId in seen:
+                continue
+            seen.add(use.eventId)
+            kind = str(use.usage).split(".")[-1]
+            if kind in ("VB", "IB", "VS_Constants", "PS_Constants", "CS_Constants", "CS_Resource", "VS_Resource",
+                        "PS_Resource", "CopySrc", "Barrier", "Indirect", "Constants"):
+                continue
+            self.controller.SetFrameEvent(use.eventId, True)
+            now = self.controller.GetBufferData(rid, offset, size)
+            if now != last:
+                changed = [index // stride for index in range(0, size, stride) if now[index:index + stride] != last[index:index + stride]]
+                say("  %d %s changed records %d..%d (%d)" % (use.eventId, kind, changed[0], changed[-1], len(changed)))
+                last = now
+        say("  uses checked %d" % len(seen))
+
+    def walk_trace(self, trace, stage, limit):
+        pipe = self.controller.GetPipelineState()
+        pipeline = pipe.GetGraphicsPipelineObject()
+        text = self.controller.DisassembleShader(pipeline, pipe.GetShaderReflection(stage),
+                                                 self.controller.GetDisassemblyTargets(True)[0]).splitlines()
+        lines = {info.instruction: info.lineInfo.disassemblyLine for info in trace.instInfo}
+        known = {}
+        found = 0
+        steps = 0
+
+        def values(var):
+            if len(var.members) > 0:
+                result = []
+                for member in var.members:
+                    result += values(member)
+                return result
+            if var.type == rd.VarType.Float:
+                return list(var.value.f32v)[:var.rows * var.columns]
+            return list(var.value.u32v)[:var.rows * var.columns]
+
+        while found < limit:
+            states = self.controller.ContinueDebug(trace.debugger)
+            if not states:
+                break
+            for state in states:
+                steps += 1
+                for change in state.changes:
+                    var = change.after
+                    if not var.name:
+                        continue
+                    now = values(var)
+                    known[var.name] = now
+                    odd = var.type == rd.VarType.Float and any(v != v or abs(v) == float("inf") for v in now)
+                    if not odd or found >= limit:
+                        continue
+                    found += 1
+                    number = lines.get(state.nextInstruction, 0)
+                    line = text[number - 1].strip() if 0 < number <= len(text) else "?"
+                    say("  step %d line %d %s = %s" % (steps, number, var.name, now))
+                    say("    %s" % line)
+                    for word in sorted(set(line.replace("(", " ").replace(")", " ").replace(",", " ").split())):
+                        if word.startswith("_") and word in known and word != var.name:
+                            say("    %s = %s" % (word, known[word]))
+        say("  steps %d, odd values %d" % (steps, found))
+        path = os.path.join(OUT, "trace-%s.txt" % str(stage).split(".")[-1])
+        with open(path, "w") as out:
+            out.write("\n".join(text) + "\n\n=== values\n")
+            for name in sorted(known):
+                out.write("%s = %s\n" % (name, known[name]))
+        say("  wrote %s" % path)
+        self.controller.FreeTrace(trace)
 
     def copies(self, first, last):
         """Print the source and the destination of each copy in this event range."""
