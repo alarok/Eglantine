@@ -1362,13 +1362,19 @@ private:
     // EDEN_NX2_FRAME_CAPTURE=<dir>: every 120th present, save what the renderer shows as
     // nx2-frame-<n>.tga in <dir> (lets hidden test runs check the output; idea from changes.patch).
     // EDEN_NX2_FRAME_CAPTURE_EVERY=<n> changes the interval, to catch short effects.
+    // EDEN_NX2_FRAME_CAPTURE_BURST=<n> saves <n> presents in a row at each interval, to find
+    // presents that show the same image again.
     void CaptureFrame() {
         static const char* const directory = std::getenv("EDEN_NX2_FRAME_CAPTURE");
         static const u32 every = [] {
             const char* value = std::getenv("EDEN_NX2_FRAME_CAPTURE_EVERY");
             return value ? static_cast<u32>(std::strtoul(value, nullptr, 10)) : 120U;
         }();
-        if (directory == nullptr || (m_presents % every) != 1 || m_capture_pending->exchange(true)) {
+        static const u32 burst = [] {
+            const char* value = std::getenv("EDEN_NX2_FRAME_CAPTURE_BURST");
+            return value ? static_cast<u32>(std::strtoul(value, nullptr, 10)) : 1U;
+        }();
+        if (directory == nullptr || ((m_presents - 1) % every) >= burst || m_capture_pending->exchange(true)) {
             return;
         }
         const auto layout = Layout::DefaultFrameLayout(1280, 720);
