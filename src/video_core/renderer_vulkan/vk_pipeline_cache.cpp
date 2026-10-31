@@ -1219,11 +1219,12 @@ void PipelineCache::SerializeVulkanPipelineCache(const std::filesystem::path& fi
              Common::FS::PathToUTF8String(filename));
 
 } catch (const std::ios_base::failure& e) {
+    // The write goes to a temporary file, so the cache is still good. Remove only the copy.
     LOG_ERROR(Common_Filesystem, "{}", e.what());
-    if (!Common::FS::RemoveFile(filename)) {
-        LOG_ERROR(Common_Filesystem, "Failed to delete Vulkan driver pipeline cache file {}",
-                  Common::FS::PathToUTF8String(filename));
-    }
+    auto temporary = filename;
+    temporary += ".tmp";
+    std::error_code error;
+    std::filesystem::remove(temporary, error);
 }
 
 vk::PipelineCache PipelineCache::LoadVulkanPipelineCache(const std::filesystem::path& filename,
