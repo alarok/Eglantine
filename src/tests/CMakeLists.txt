@@ -9,7 +9,9 @@ add_executable(tests
     common/cityhash.cpp
     common/container_hash.cpp
     common/fibers.cpp
+    common/fs_iterate.cpp
     common/host_memory.cpp
+    common/nintendo_store.cpp
     common/param_package.cpp
     common/range_map.cpp
     common/ring_buffer.cpp
@@ -18,6 +20,7 @@ add_executable(tests
     common/unique_function.cpp
     core/core_timing.cpp
     core/internal_network/network.cpp
+    core/loader/loose_dump_sidecars.cpp
     video_core/memory_tracker.cpp
     video_core/ampere_returns.cpp
     input_common/calibration_configuration_job.cpp

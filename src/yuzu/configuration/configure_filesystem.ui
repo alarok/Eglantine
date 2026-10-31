@@ -236,6 +236,16 @@
           </item>
          </layout>
         </item>
+        <item row="1" column="0" colspan="2">
+         <widget class="QCheckBox" name="store_game_metadata">
+          <property name="text">
+           <string>Download names and icons of loose dumps from the Nintendo store</string>
+          </property>
+          <property name="toolTip">
+           <string>Sends the title ID of each loose dump without a control.nacp or an icon file, and your IP address, to Nintendo. The result stays in the metadata cache.</string>
+          </property>
+         </widget>
+        </item>
        </layout>
       </widget>
      </item>
