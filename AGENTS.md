@@ -79,6 +79,7 @@ It checks the changed units with local Clang in seconds. `compile-check` builds 
 Start a release after `compile-check` passes.
 A new dispatch on the same branch cancels the release that runs (`cancel-in-progress`). Wait for it to end, or accept the loss.
 To test a build with no release, dispatch with `-f publish_release=false`. Each job uploads its artifact when that job ends, so the AppImage for a handheld is ready before the slow jobs end.
+`linux-aarch64`, `linux-aarch64-pgo` and `macos-arm64` are experimental: a failure does not stop the release, and the build step has a limit of 75 minutes. Nobody has run these files yet.
 Do not push a change to `.github/workflows` while a release runs. `gh release create --target` then gets HTTP 403, because the job token cannot have the `workflows` permission.
 If this occurs, download the run artifacts and publish them with `gh-alarok`. Recompile nothing.
 After a release, set the title to `Eglantine 0.<n> (build <run number>)` and write notes with `gh release edit`. Use these parts: which file to use, main changes, what was tested, known faults. Copy the shape of `build-26`.
@@ -156,6 +157,8 @@ Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. P
 |---|---|
 | `gui_settings_runs.ps1 -Label <l> -Variants <v> -Seconds <n>` | Bananza from Deku's save point. The log is `<l>-bananza-c\<v>\user\log\eden_log.txt`, the sheet is `<l>-bananza-c\thumbs.png`. |
 | `regress_run.ps1 -Label <l> -Game <mkw-c or pokopia> -Variant <v> -Item <item or none>` | Another game, with an A/B inside the run. It has the GPU profile on. |
+| `mkw_race.ps1 -Exe <exe> -Label <l> [-Seconds 300]` | A driven race of Mario Kart World: the taps reach the first Grand Prix race, and A stays down from 126 s. Smart steering drives two laps. The log is `<l>-mkw-c\seed-acc0-nr\user\log\eden_log.txt`. The kart in `seed-acc0` runs stays at the start line, so use this script for race numbers. Two equal runs differ by 2.7 ms, because the race changes each time. So compare builds with more than one run each. |
+| `race_series.ps1 race5=<exe> race6=<exe> ...`, `race_means.py <label> ...` | Run a series of races and print the mean frame time after 140 s, the stalls and the draws per picture. The folder of each exe goes first on `PATH`, so a CI build finds its DLLs. |
 | `matrix.py` | Defines the variants. `owner-cold` is Deku's settings with an empty cache, `seed-acc0` is Fast, `seed` is Accurate. |
 | `halo_run.ps1`, `camera_run.ps1` + `camera_report.py`, `rdoc_run.ps1` | Halo count, camera sweep, read a RenderDoc capture. |
 
