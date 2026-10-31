@@ -82,9 +82,6 @@ jobs:
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 1500M
-      # apt.llvm.org replaces its Clang often. The default check reads the file time of the
-      # compiler, so each new package makes all the stored objects useless.
-      CCACHE_COMPILERCHECK: '%compiler% -dumpversion'
       SCCACHE_DIR: ${{ github.workspace }}/.sccache
     strategy:
       fail-fast: false

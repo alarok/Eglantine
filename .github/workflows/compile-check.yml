@@ -20,9 +20,10 @@ on:
 permissions:
   contents: read
 
+# A cancelled run saves no objects. So a run always ends, and only the newest push waits for it.
 concurrency:
   group: compile-check-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   compile:
@@ -35,7 +36,8 @@ jobs:
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 1500M
-      # See release-binaries.yml.
+      # apt.llvm.org replaces its Clang often. The default check reads the file time of the
+      # compiler, so each new package makes all the stored objects useless.
       CCACHE_COMPILERCHECK: '%compiler% -dumpversion'
       LLVM_VERSION: '23'
     steps:

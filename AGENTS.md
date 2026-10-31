@@ -72,6 +72,8 @@ Do not make other work wait for one.
 MSVC accepts code that GCC and Clang refuse. Before a push, run `python tools/nx2/clang_check.py <build dir>`.
 It checks the changed units with local Clang in seconds. `compile-check` builds each push with GCC and Clang.
 Start a release after `compile-check` passes.
+Do not push a change to `.github/workflows` while a release runs. `gh release create --target` then gets HTTP 403, because the job token cannot have the `workflows` permission.
+If this occurs, download the run artifacts and publish them with `gh-alarok`. Recompile nothing.
 Build success does not prove game compatibility or increased FPS.
 See `tools/nx2/upstream_sync.md` for workflow behavior and release triggers.
 
