@@ -222,27 +222,28 @@ inline void Report(const char* thread_name = "GPU thread") {
         zoned += data.exclusive_ns[i];
     }
     data.exclusive_ns[0] = window > zoned ? window - zoned : 0;
+    const auto window_ns = static_cast<double>(window);
     std::string line;
     for (size_t i = 0; i < data.exclusive_ns.size(); ++i) {
         if (data.exclusive_ns[i] == 0 && data.count[i] == 0) {
             continue;
         }
         // Per second of wall time: milliseconds spent and calls made.
-        const double ms = static_cast<double>(data.exclusive_ns[i]) * 1000.0 / window;
-        const double calls = static_cast<double>(data.count[i]) * 1e9 / window;
+        const double ms = static_cast<double>(data.exclusive_ns[i]) * 1000.0 / window_ns;
+        const double calls = static_cast<double>(data.count[i]) * 1e9 / window_ns;
         line += fmt::format(" | {} {:.1f} ms ({:.0f}/s)", zone_names[i], ms, calls);
     }
     line += fmt::format(" | buffer downloads {:.0f} KiB in {:.0f} copies ({:.0f} KiB on pages "
                         "MME DMA reads) | MME DMA reads {:.0f} KiB",
-                        static_cast<double>(data.counters[0]) * 1e9 / 1024.0 / window,
-                        static_cast<double>(data.counters[1]) * 1e9 / window,
-                        static_cast<double>(data.counters[3]) * 1e9 / 1024.0 / window,
-                        static_cast<double>(data.counters[2]) * 1e9 / 1024.0 / window);
+                        static_cast<double>(data.counters[0]) * 1e9 / 1024.0 / window_ns,
+                        static_cast<double>(data.counters[1]) * 1e9 / window_ns,
+                        static_cast<double>(data.counters[3]) * 1e9 / 1024.0 / window_ns,
+                        static_cast<double>(data.counters[2]) * 1e9 / 1024.0 / window_ns);
     line += fmt::format(" | 3D register writes {:.0f} ({:.0f} same value)",
-                        static_cast<double>(data.counters[4]) * 1e9 / window,
-                        static_cast<double>(data.counters[5]) * 1e9 / window);
+                        static_cast<double>(data.counters[4]) * 1e9 / window_ns,
+                        static_cast<double>(data.counters[5]) * 1e9 / window_ns);
     const auto rate = [&](Counter counter) {
-        return static_cast<double>(data.counters[static_cast<size_t>(counter)]) * 1e9 / window;
+        return static_cast<double>(data.counters[static_cast<size_t>(counter)]) * 1e9 / window_ns;
     };
     line += fmt::format(" | acquires {:.0f} ({:.0f} waited)", rate(Counter::AcquireChecks),
                         rate(Counter::AcquireWaits));
@@ -257,8 +258,8 @@ inline void Report(const char* thread_name = "GPU thread") {
     for (size_t i = 0; i < data.drain_count.size(); ++i) {
         if (data.drain_count[i] != 0) {
             line += fmt::format(" | drains for {} {:.0f}/s {:.1f} ms", drain_site_names[i],
-                                static_cast<double>(data.drain_count[i]) * 1e9 / window,
-                                static_cast<double>(data.drain_ns[i]) * 1000.0 / window);
+                                static_cast<double>(data.drain_count[i]) * 1e9 / window_ns,
+                                static_cast<double>(data.drain_ns[i]) * 1000.0 / window_ns);
         }
     }
     LOG_INFO(HW_GPU, "{} per second:{}", thread_name, line);
