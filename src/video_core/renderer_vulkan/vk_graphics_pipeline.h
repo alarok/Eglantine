@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <type_traits>
@@ -71,6 +72,9 @@ class RenderPassCache;
 class RescalingPushConstant;
 class RenderAreaPushConstant;
 class Scheduler;
+
+/// Adds one wait of the scheduler thread for a pipeline build to the log (vk_pipeline_cache.cpp).
+void ReportPipelineBuildWait(std::chrono::steady_clock::time_point begin);
 
 class GraphicsPipeline {
     static constexpr size_t NUM_STAGES = Tegra::Engines::Maxwell3D::Regs::MaxShaderStage;

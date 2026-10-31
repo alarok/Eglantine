@@ -972,8 +972,10 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline(
         previous_stage = &program;
     }
     Common::ThreadWorker* const thread_worker{build_in_parallel ? &workers : nullptr};
+    // The loading screen counts the disk cache. The status bar counts only run time builds.
+    VideoCore::ShaderNotify* const notify{build_in_parallel ? &shader_notify : nullptr};
     return std::make_unique<GraphicsPipeline>(
-        scheduler, buffer_cache, texture_cache, vulkan_pipeline_cache, &shader_notify, device,
+        scheduler, buffer_cache, texture_cache, vulkan_pipeline_cache, notify, device,
         descriptor_pool, guest_descriptor_queue, descriptor_buffer_ring, thread_worker, statistics,
         render_pass_cache, key, std::move(modules), infos);
 
@@ -1021,6 +1023,28 @@ void ReportRuntimePipeline(const char* kind, std::chrono::steady_clock::time_poi
     }
 }
 } // Anonymous namespace
+
+// The scheduler thread waits here for the driver compile of a new pipeline. The time above does
+// not include this wait. It runs on one thread only.
+void ReportPipelineBuildWait(std::chrono::steady_clock::time_point begin) {
+    static std::chrono::steady_clock::duration total{};
+    static std::chrono::steady_clock::duration longest{};
+    static u32 count{};
+    static auto window = begin;
+    const auto now = std::chrono::steady_clock::now();
+    total += now - begin;
+    longest = std::max<std::chrono::steady_clock::duration>(longest, now - begin);
+    ++count;
+    if (now - window > std::chrono::seconds{10}) {
+        const auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+        LOG_INFO(Render_Vulkan, "Pipeline build waits in the last 10 s: {}, {:.1f} ms on the scheduler thread (longest {:.1f} ms)",
+                 count, ms(total), ms(longest));
+        total = {};
+        longest = {};
+        count = 0;
+        window = now;
+    }
+}
 
 std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline() {
     const auto begin = std::chrono::steady_clock::now();
@@ -1138,10 +1162,12 @@ std::unique_ptr<ComputePipeline> PipelineCache::CreateComputePipeline(
         spv_module.SetObjectNameEXT(name.c_str());
     }
     Common::ThreadWorker* const thread_worker{build_in_parallel ? &workers : nullptr};
+    // The loading screen counts the disk cache. The status bar counts only run time builds.
+    VideoCore::ShaderNotify* const notify{build_in_parallel ? &shader_notify : nullptr};
     return std::make_unique<ComputePipeline>(device, scheduler, vulkan_pipeline_cache, descriptor_pool,
                                              guest_descriptor_queue, descriptor_buffer_ring,
                                              thread_worker, statistics,
-                                             &shader_notify, program.info, std::move(spv_module),
+                                             notify, program.info, std::move(spv_module),
                                              key.unique_hash);
 
 } catch (const Shader::Exception& exception) {

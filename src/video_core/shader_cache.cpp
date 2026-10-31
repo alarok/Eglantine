@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <string>
 #include <unordered_set>
@@ -28,6 +29,31 @@
 #include "video_core/texture_cache/util.h"
 
 namespace VideoCommon {
+
+namespace {
+// A new program costs a read, a hash and, for a native program, the lowering. The disk cache does
+// not keep this result, so this runs on the GPU thread on every boot. The total every 10 s tells
+// how much of a stall on new content comes from this step.
+void ReportNewProgram(std::chrono::steady_clock::time_point begin) {
+    static std::chrono::steady_clock::duration total{};
+    static std::chrono::steady_clock::duration longest{};
+    static u32 count{};
+    static auto window = begin;
+    const auto now = std::chrono::steady_clock::now();
+    total += now - begin;
+    longest = std::max<std::chrono::steady_clock::duration>(longest, now - begin);
+    ++count;
+    if (now - window > std::chrono::seconds{10}) {
+        const auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+        LOG_INFO(HW_GPU, "New shader programs in the last 10 s: {}, {:.1f} ms on the GPU thread (longest {:.1f} ms)",
+                 count, ms(total), ms(longest));
+        total = {};
+        longest = {};
+        count = 0;
+        window = now;
+    }
+}
+} // Anonymous namespace
 
 void ShaderCache::InvalidateRegion(VAddr addr, size_t size) {
     std::scoped_lock lock{invalidation_mutex};
@@ -92,8 +118,10 @@ bool ShaderCache::RefreshStages(std::array<u64, 6>& unique_hashes) try {
                 // Native programs are lowered while the environment is built (once: the
                 // ShaderInfo keeps the result for the pipeline's environments).
                 RethrowIfRejected(*cpu_shader_addr);
+                const auto begin = std::chrono::steady_clock::now();
                 GraphicsEnvironment env{*maxwell3d, *gpu_memory, program, native ? shader_addr : base_addr, start_address};
                 shader_info = MakeShaderInfo(env, *cpu_shader_addr);
+                ReportNewProgram(begin);
             } catch (const Shader::Exception&) {
                 RememberRejection(*cpu_shader_addr);
                 // Once per program: which stage slot it is bound to, its header and the slot's
@@ -158,8 +186,11 @@ const ShaderInfo* ShaderCache::ComputeShader() {
     }
     try {
         RethrowIfRejected(*cpu_shader_addr);
+        const auto begin = std::chrono::steady_clock::now();
         ComputeEnvironment env{*kepler_compute, *gpu_memory, program_base, qmd.program_start};
-        return MakeShaderInfo(env, *cpu_shader_addr);
+        const ShaderInfo* const shader = MakeShaderInfo(env, *cpu_shader_addr);
+        ReportNewProgram(begin);
+        return shader;
     } catch (const Shader::Exception&) {
         RememberRejection(*cpu_shader_addr);
         throw;
