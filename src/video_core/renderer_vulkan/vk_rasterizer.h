@@ -161,7 +161,7 @@ private:
 
     void FlushWork();
 
-    void UpdateDynamicStates();
+    void UpdateDynamicStates(const GraphicsPipeline* pipeline);
 
     void HandleTransformFeedback();
 
