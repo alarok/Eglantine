@@ -81,7 +81,8 @@ inline void NextMacroFromRecord() {
 }
 
 inline void MacroBegin(u32 start) {
-    t_macro = {.start = start % MacroSlots, .active = true, .from_record = t_next_macro_from_record};
+    t_macro = {.start = static_cast<u32>(start % MacroSlots), .active = true,
+               .from_record = t_next_macro_from_record};
     t_next_macro_from_record = false;
 }
 
