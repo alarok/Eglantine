@@ -34,6 +34,17 @@ class NCA;
 class VfsFilesystem;
 } // namespace FileSys
 
+namespace Loader {
+class AppLoader;
+}
+
+/// Returns the game name of a loose ExeFS dump, or an empty string for any other path.
+QString LooseExeFSName(const std::string& physical_name);
+
+/// Returns the version of a loose ExeFS dump: the loader value, or v<N> from an updates/<N> folder.
+/// Returns an empty string if neither exists. The v<N> value is for display only.
+QString LooseDumpVersion(const std::string& physical_name, Loader::AppLoader& loader);
+
 /**
  * Asynchronous worker object for populating the game list.
  * Communicates with other threads through Qt's signal/slot system.

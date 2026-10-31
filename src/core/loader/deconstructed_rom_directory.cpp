@@ -131,7 +131,7 @@ std::string RomFSProductVersion(const FileSys::VirtualDir& romfs_dir) {
 }
 
 // Loose ExeFS dumps carry no control data, but icon/nacp sidecars can be dropped next to the
-// ExeFS or in the game folder above it (<game>/exefs/main and
+// ExeFS or in the game folder above it (<game>/exefs/main, <game>/base/exefs/main and
 // <game>/updates/<title id>/exefs/main layouts).
 std::vector<FileSys::VirtualDir> FindSidecarDirs(const FileSys::VirtualDir& exefs_dir) {
     std::vector<FileSys::VirtualDir> dirs{exefs_dir};
@@ -142,10 +142,10 @@ std::vector<FileSys::VirtualDir> FindSidecarDirs(const FileSys::VirtualDir& exef
         }
         const auto& name = parent->GetName();
         dirs.push_back(parent);
-        const bool title_id_like =
-            name == "updates" ||
+        const bool inside_game_folder =
+            name == "updates" || name == "base" ||
             (!name.empty() && name.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos);
-        if (!title_id_like) {
+        if (!inside_game_folder) {
             break;
         }
         dir = parent;

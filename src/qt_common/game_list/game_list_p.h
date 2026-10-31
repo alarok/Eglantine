@@ -84,7 +84,8 @@ public:
     GameListItemPath() = default;
     GameListItemPath(const QString& game_path, const std::vector<u8>& picture_data,
                      const QString& game_name, const QString& game_type, u64 program_id,
-                     u64 play_time, const QString& patch_versions) {
+                     u64 play_time, const QString& patch_versions,
+                     const QString& dump_version = {}) {
         setData(type(), TypeRole);
         setData(game_path, FullPathRole);
         setData(game_name, TitleRole);
@@ -97,7 +98,10 @@ public:
                                     PlayTime::PlayTimeManager::GetReadablePlayTime(play_time)))
                           : QObject::tr("Never Played");
 
-        const auto enabled_update = [patch_versions]() -> QString {
+        const auto enabled_update = [patch_versions, dump_version]() -> QString {
+            if (!dump_version.isEmpty()) {
+                return QObject::tr("Version: %1").arg(dump_version);
+            }
             const QStringList lines = patch_versions.split(QLatin1Char('\n'));
             const QRegularExpression regex{QStringLiteral(R"(^Update \(([0-9\.]+)\))")};
             for (const QString& line : std::as_const(lines)) {

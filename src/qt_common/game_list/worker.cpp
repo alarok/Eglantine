@@ -5,15 +5,19 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <charconv>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QSettings>
 
 #include "common/fs/fs.h"
@@ -168,36 +172,62 @@ QString FormatGameName(const std::string& physical_name) {
     return physical_name_as_qstring;
 }
 
-// Loose ExeFS dumps (<game>/exefs/main, updates in <game>/updates[/]/exefs/main) have no control
-// data, so they are named after their game folder.
-QString LooseExeFSName(const std::string& physical_name) {
-    QDir dir = QFileInfo(QString::fromStdString(physical_name)).dir();
-    if (dir.dirName().compare(QStringLiteral("exefs"), Qt::CaseInsensitive) != 0 || !dir.cdUp()) {
-        return {};
+// Returns the number of a folder named after an internal update version, such as 458752.
+std::optional<u64> ParseVersionFolder(const std::string& name) {
+    u64 number = 0;
+    const char* const end = name.data() + name.size();
+    const auto [ptr, ec] = std::from_chars(name.data(), end, number);
+    if (name.empty() || ec != std::errc{} || ptr != end) {
+        return std::nullopt;
+    }
+    return number;
+}
+
+// A game folder holds its base dump in <game>/base and complete updates in <game>/updates/<N>.
+// The list shows only the newest of these dumps, so each game has one row.
+bool HasNewerLooseDump(const std::filesystem::path& main_path) {
+    const auto exefs = main_path.parent_path();
+    if (exefs.filename() != "exefs") {
+        return false;
     }
 
-    const auto is_updates_dir = [&dir] {
-        return dir.dirName().compare(QStringLiteral("updates"), Qt::CaseInsensitive) == 0;
-    };
+    const auto dump_dir = exefs.parent_path();
+    const auto game_or_updates = dump_dir.parent_path();
+    const auto dump_name = Common::FS::PathToUTF8String(dump_dir.filename());
 
-    // An update may sit in a title-ID-named folder: <game>/updates/<title id>/exefs.
-    if (!is_updates_dir()) {
-        const QString tid = dir.dirName();
-        if (!std::all_of(tid.cbegin(), tid.cend(), [](QChar c) { return c.isDigit(); }) ||
-            !dir.cdUp() || !is_updates_dir()) {
-            return tid;
+    std::optional<u64> own_version;
+    std::filesystem::path updates;
+    if (dump_name == "base") {
+        updates = game_or_updates / "updates";
+        if (Common::FS::IsFile(updates / "exefs" / "main")) {
+            return true;
         }
+    } else {
+        own_version = ParseVersionFolder(dump_name);
+        if (!own_version.has_value() || game_or_updates.filename() != "updates") {
+            return false;
+        }
+        updates = game_or_updates;
     }
 
-    if (!dir.cdUp()) {
-        return {};
+    if (!Common::FS::IsDir(updates)) {
+        return false;
     }
 
-    const QString name = dir.dirName();
-    if (name.contains(QStringLiteral("update"), Qt::CaseInsensitive)) {
-        return name;
-    }
-    return QObject::tr("%1 (update)").arg(name);
+    bool found_newer = false;
+    Common::FS::IterateDirEntries(
+        updates,
+        [&](const std::filesystem::path& entry) {
+            const auto version =
+                ParseVersionFolder(Common::FS::PathToUTF8String(entry.filename()));
+            if (version.has_value() && (!own_version || *version > *own_version) &&
+                Common::FS::IsFile(entry / "exefs" / "main")) {
+                found_newer = true;
+            }
+            return true;
+        },
+        Common::FS::DirEntryFilter::Directory);
+    return found_newer;
 }
 
 QString FormatPatchNameVersions(const FileSys::PatchManager& patch_manager,
@@ -236,7 +266,8 @@ QList<QStandardItem*> MakeGameListEntry(const std::string& path, const std::stri
                                         const std::size_t size, const std::vector<u8>& icon,
                                         Loader::AppLoader& loader, u64 program_id,
                                         const PlayTime::PlayTimeManager& play_time_manager,
-                                        const FileSys::PatchManager& patch) {
+                                        const FileSys::PatchManager& patch,
+                                        const QString& dump_version = {}) {
     auto const file_type = loader.GetFileType();
     auto const file_type_string = QString::fromStdString(Loader::GetFileTypeString(file_type));
 
@@ -245,10 +276,20 @@ QList<QStandardItem*> MakeGameListEntry(const std::string& path, const std::stri
             return FormatPatchNameVersions(patch, loader, loader.IsRomFSUpdatable());
         });
 
+    // The cache is keyed by title ID, and two dumps of one title can differ, so it must not keep
+    // the version of a dump.
+    if (!dump_version.isEmpty()) {
+        const QString version = QObject::tr("Version (%1)").arg(dump_version);
+        patch_versions = patch_versions.isEmpty()
+                             ? version
+                             : QStringLiteral("%1\n%2").arg(version, patch_versions);
+    }
+
     u64 play_time = play_time_manager.GetPlayTime(program_id);
     return QList<QStandardItem*>{
         new GameListItemPath(FormatGameName(path), icon, QString::fromStdString(name),
-                             file_type_string, program_id, play_time, patch_versions),
+                             file_type_string, program_id, play_time, patch_versions,
+                             dump_version),
         new GameListItem(file_type_string),
         new GameListItemSize(size),
         new GameListItemPlayTime(play_time),
@@ -256,6 +297,61 @@ QList<QStandardItem*> MakeGameListEntry(const std::string& path, const std::stri
     };
 }
 } // Anonymous namespace
+
+// Loose ExeFS dumps (<game>/exefs/main, <game>/base/exefs/main and <game>/updates[/N]/exefs/main)
+// have no control data, so they are named after their game folder.
+QString LooseExeFSName(const std::string& physical_name) {
+    QDir dir = QFileInfo(QString::fromStdString(physical_name)).dir();
+    if (dir.dirName().compare(QStringLiteral("exefs"), Qt::CaseInsensitive) != 0 || !dir.cdUp()) {
+        return {};
+    }
+
+    const auto is_dir_named = [&dir](const QString& name) {
+        return dir.dirName().compare(name, Qt::CaseInsensitive) == 0;
+    };
+    const auto game_name = [](QString name) {
+        // Dump tools often add the title ID: "Some Game [0400000000000000]".
+        static const QRegularExpression title_id{QStringLiteral(R"(\s*\[[0-9A-Fa-f]{16}\]$)")};
+        return name.remove(title_id);
+    };
+
+    // An update may sit in a title-ID-named folder: <game>/updates/<title id>/exefs.
+    if (!is_dir_named(QStringLiteral("updates")) && !is_dir_named(QStringLiteral("base"))) {
+        const QString tid = dir.dirName();
+        if (!std::all_of(tid.cbegin(), tid.cend(), [](QChar c) { return c.isDigit(); }) ||
+            !dir.cdUp() || !is_dir_named(QStringLiteral("updates"))) {
+            return game_name(tid);
+        }
+    }
+
+    if (!dir.cdUp()) {
+        return {};
+    }
+
+    return game_name(dir.dirName());
+}
+
+QString LooseDumpVersion(const std::string& physical_name, Loader::AppLoader& loader) {
+    if (LooseExeFSName(physical_name).isEmpty()) {
+        return {};
+    }
+
+    std::string version;
+    if (loader.ReadDisplayVersion(version) == Loader::ResultStatus::Success && !version.empty()) {
+        return QString::fromStdString(version);
+    }
+
+    QDir dir = QFileInfo(QString::fromStdString(physical_name)).dir();
+    if (!dir.cdUp()) {
+        return {};
+    }
+    const QString folder = dir.dirName();
+    if (!ParseVersionFolder(folder.toStdString()).has_value() || !dir.cdUp() ||
+        dir.dirName().compare(QStringLiteral("updates"), Qt::CaseInsensitive) != 0) {
+        return {};
+    }
+    return QStringLiteral("v%1").arg(folder);
+}
 
 GameListWorker::GameListWorker(FileSys::VirtualFilesystem vfs_,
                                FileSys::ManualContentProvider* provider_,
@@ -369,6 +465,11 @@ void GameListWorker::ScanFileSystem(ScanTarget target, const std::string& dir_pa
     const auto process_candidate = [this, target,
                                     parent_dir](const std::filesystem::path& path) {
         const auto physical_name = Common::FS::PathToUTF8String(path);
+        if (target == ScanTarget::PopulateGameList && IsExtractedNCAMain(physical_name) &&
+            HasNewerLooseDump(path)) {
+            return;
+        }
+
         const auto file = vfs->OpenFile(physical_name, FileSys::OpenMode::Read);
         if (!file) {
             return;
@@ -425,12 +526,21 @@ void GameListWorker::ScanFileSystem(ScanTarget target, const std::string& dir_pa
                     }
                 }
 
+                QString dump_version;
+                if (IsExtractedNCAMain(physical_name) &&
+                    !LooseExeFSName(physical_name).isEmpty()) {
+                    dump_version = LooseDumpVersion(physical_name, *app_loader);
+                    if (dump_version.isEmpty()) {
+                        dump_version = QObject::tr("Unknown");
+                    }
+                }
+
                 const FileSys::PatchManager patch{id, system.GetFileSystemController(),
                                                   system.GetContentProvider()};
 
                 auto entry = MakeGameListEntry(
                     physical_name, name, Common::FS::GetSize(physical_name), icon, *app_loader,
-                    id, play_time_manager, patch);
+                    id, play_time_manager, patch, dump_version);
 
                 RecordEvent([=](GameListModel* model) { model->AddEntry(entry, parent_dir); });
             };
@@ -468,14 +578,17 @@ void GameListWorker::ScanFileSystem(ScanTarget target, const std::string& dir_pa
             watch_list.append(QString::fromStdString(Common::FS::PathToUTF8String(path)));
 
             // Shallow scans stop at the first level, so probe the standard layouts of loose
-            // ExeFS dumps: <game>/exefs/main and <game>/updates/<title id>/exefs/main.
+            // ExeFS dumps: <game>/exefs/main, <game>/base/exefs/main and
+            // <game>/updates/<title id>/exefs/main. The scanned folder can be the game folder.
             if (!deep_scan && target == ScanTarget::PopulateGameList) {
-                const auto exefs_main = path / "exefs" / "main";
-                if (Common::FS::IsFile(exefs_main)) {
-                    process_candidate(exefs_main);
+                for (const auto& exefs_main :
+                     {path / "exefs" / "main", path / "base" / "exefs" / "main"}) {
+                    if (Common::FS::IsFile(exefs_main)) {
+                        process_candidate(exefs_main);
+                    }
                 }
 
-                const auto updates = path / "updates";
+                const auto updates = path.filename() == "updates" ? path : path / "updates";
                 if (Common::FS::IsDir(updates)) {
                     Common::FS::IterateDirEntries(
                         updates,
@@ -493,8 +606,10 @@ void GameListWorker::ScanFileSystem(ScanTarget target, const std::string& dir_pa
             return true;
         }
 
+        // The provider pass takes only containers, so it skips the slow loader of a loose dump.
         const auto physical_name = Common::FS::PathToUTF8String(path);
-        if (HasSupportedFileExtension(physical_name) || IsExtractedNCAMain(physical_name)) {
+        if (HasSupportedFileExtension(physical_name) ||
+            (target == ScanTarget::PopulateGameList && IsExtractedNCAMain(physical_name))) {
             process_candidate(path);
         }
 
