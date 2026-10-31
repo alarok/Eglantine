@@ -227,15 +227,15 @@ jobs:
           restore-keys: |
             cpm-${{ runner.os }}-
 
-      # The sha in the key makes every run save a fresh cache (actions/cache never saves over an
-      # exact hit), and restore-keys seeds it from the newest one of the same platform.
-      - name: Cache compiler objects
-        uses: actions/cache@v4
+      # The run id in the key makes every run save a fresh cache (a cache never saves over an exact
+      # hit), and restore-keys seeds it from the newest one of the same platform.
+      - name: Restore compiler objects
+        uses: actions/cache/restore@v4
         with:
           path: |
             .ccache
             .sccache
-          key: objects-${{ matrix.platform }}-${{ github.sha }}
+          key: objects-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             objects-${{ matrix.platform }}-
 
@@ -342,6 +342,16 @@ jobs:
         run: |
           cmake --build build/release --target yuzu yuzu-cmd --parallel
           ccache --show-stats
+
+      # This also runs after a failed build. The next run then compiles only what is not done.
+      - name: Save compiler objects
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .ccache
+            .sccache
+          key: objects-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # A self-contained AppImage: linuxdeploy bundles every library the two programs need except
       # the base system ones (glibc, X11/Wayland client libraries, the GPU driver and Vulkan loader),
