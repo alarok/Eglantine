@@ -9,6 +9,7 @@ Use a separate `codex/` branch for each independent change.
 Check active worktrees before editing. Another agent can own `C:/egl-mkw` or a feature worktree.
 Do not edit another agent's files or change its active branch.
 
+Only `alarok` pushes, opens pull requests, and publishes releases in this repository.
 Use `gh-alarok` for `alarok/Eglantine`.
 Verify its identity through `api user` before a remote change.
 The primary account remains `deku-95`, selected through `gh-deku`.

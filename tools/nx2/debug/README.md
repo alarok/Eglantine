@@ -25,6 +25,12 @@ Only `play.ps1` and `matrix.py` start it.
   `EDEN_RENDERDOC_PATH=<template>` sets the path of the capture files.
 - `EDEN_NX2_RDOC_PRESENTS=<n>[,<n>...]` makes one RenderDoc capture from present `n` to present `n+2`. Keep the numbers at least 3 apart.
 - `EDEN_NX2_FRAME_CAPTURE_EVERY=<n>` changes the interval of the saved frames from 120 presents.
+- `EDEN_NX2_NO_NV_GEOMETRY=1` hides `VK_NV_geometry_shader_passthrough`, `VK_NV_viewport_array2` and `VK_NV_viewport_swizzle`. An NVIDIA card then takes the shader paths of AMD and Intel. Use an empty shader cache.
+- `EDEN_NX2_KEEP_ASTC=1` turns off the BC3 texture mode that low VRAM selects.
+- `EDEN_NX2_VRAM_LIMIT_MIB=<n>` treats each device-local heap as `<n>` MiB, to test a smaller card.
+- `EDEN_NX2_BUFFER_DOWNLOADS=0` or `1` overrides the default for the buffer copy back at fences. Only Pokopia has it on by default.
+- `EDEN_NX2_AB=<s>` with `EDEN_NX2_AB_ITEM=<item>` switches `Common::Nx2Ab::On(<item>)` every `<s>` seconds. Item `none` gives the noise.
+- `EDEN_NX2_GPU_PROFILE=1` writes the share of each GPU thread zone to the log every 10 s. It makes frames slower.
 - The GUI reads these names from `nx2_switches.txt`. A variable in the real environment wins.
 - `matrix.py` removes every `EDEN_NX2_*` variable from the child environment.
   To pass one, set `MATRIX_EXTRA_ENV="NAME=value;NAME=value"`.
@@ -38,7 +44,7 @@ A draw that draws nothing shows no error. Only these counts show it.
 - `Census zero draws`: draws with 0 vertices or 0 copies. A record with 0 triangles usually gives a zero draw. This is normal for a mesh that culling removed.
 - `macro_record_no_draw`: macros that got a record and drew nothing. A record with 0 copies gives this, because the macro has no copy to draw.
 - `Census top macros`: the macros with the most of these counts. The number is the macro's start position, as in the `Native MME` log lines.
-- `failed` and `predicate_off`: the rasterizer dropped the draw, or the render condition dropped it.
+- `failed` and `predicate_off`: the rasterizer dropped the draw, or the render condition dropped it. `failed` has no log limit, but the `Draw skipped` line shows once per shader pair. A high `failed` with one error line is one bad pipeline on each draw.
 - `Census images`: sampled images with no device memory, and the draws that sample them. A `Census image:` line gives the address, the size and the format of each one.
 - `Lost shader stores`: a program that writes through an address the recompiler cannot map. Usually the address was loaded from memory. The store writes nothing.
 
@@ -71,6 +77,19 @@ The first line of a capture holds the reason. Each next line is one pushbuffer e
 - `vdec_compare.py`: use it to check a `EDEN_NX2_VDEC_DUMP` folder. It compares the inputs with the `.webm` packets and the frames with FFmpeg output.
   It saves the first different frame. A result of 0 different frames proves that the decoder is correct and the fault is after it.
   `python vdec_compare.py <dump dir> [movie dir]`
+- `ab_means.py`: use it to read the `nx2 A/B` rows of a log. It prints the frame time of each side after a start time. With item `none`, the difference is the noise.
+  `python ab_means.py <log> [first second]`
+- `vram_series.py`: use it to print the texture cache, heap and frame lines of a log as one table.
+  `python vram_series.py <log> [every]`
+- `ini_diff.py`: use it to print the settings that differ between two config files. It does not print paths, names or keys.
+  `python ini_diff.py <a.ini> <b.ini>`
+
+## Frame tools (read saved `.tga` frames, and need Pillow)
+
+- `black_census.py`: use it to count frames with a black 3D view and a lit HUD, for each run under a folder. It also prints the settings of the run from `probe.ini`.
+  `python black_census.py <folder>`
+- `frame_luma.py`: use it to print the brightness of the middle of each frame.
+  `python frame_luma.py <frames-dir> [every]`
 
 ## Shader cache tools
 
