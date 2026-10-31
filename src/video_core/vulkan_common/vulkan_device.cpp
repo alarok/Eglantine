@@ -609,6 +609,18 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
         }
     }
 
+    // Keep this above the float16 workaround below. That workaround clears the value that this
+    // check reads, and then every AMD GPU looks like GCN4.
+    if (extensions.sampler_filter_minmax && is_amd) {
+        // Disable ext_sampler_filter_minmax on AMD GCN4 and lower as it is broken.
+        if (!features.shader_float16_int8.shaderFloat16) {
+            LOG_WARNING(Render_Vulkan,
+                        "AMD GCN4 and earlier have broken VK_EXT_sampler_filter_minmax");
+            RemoveExtension(extensions.sampler_filter_minmax,
+                            VK_EXT_SAMPLER_FILTER_MINMAX_EXTENSION_NAME);
+        }
+    }
+
     sets_per_pool = 64;
     if (is_amd_driver) {
         // AMD drivers need a higher amount of Sets per Pool in certain circumstances like in XC2.
@@ -626,16 +638,6 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
             LOG_WARNING(Render_Vulkan,
                         "AMD drivers (2026+) have broken float16 math");
             features.shader_float16_int8.shaderFloat16 = false;
-        }
-    }
-
-    if (extensions.sampler_filter_minmax && is_amd) {
-        // Disable ext_sampler_filter_minmax on AMD GCN4 and lower as it is broken.
-        if (!features.shader_float16_int8.shaderFloat16) {
-            LOG_WARNING(Render_Vulkan,
-                        "AMD GCN4 and earlier have broken VK_EXT_sampler_filter_minmax");
-            RemoveExtension(extensions.sampler_filter_minmax,
-                            VK_EXT_SAMPLER_FILTER_MINMAX_EXTENSION_NAME);
         }
     }
 
