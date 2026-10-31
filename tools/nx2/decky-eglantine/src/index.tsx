@@ -5,10 +5,10 @@ import { callable, definePlugin } from "@decky/api";
 import {
   ButtonItem,
   DialogButton,
-  DropdownItem,
   Focusable,
   PanelSection,
   PanelSectionRow,
+  SliderField,
   staticClasses,
 } from "@decky/ui";
 import { ReactNode, useEffect, useRef, useState } from "react";
@@ -41,6 +41,9 @@ interface State {
 
 const GLOBAL_SCOPE = "global";
 const POLL_MS = 3000;
+const MESSAGE_MS = 5000;
+// Steam gives each tick a minimum width. The ticks of a long list go past the right edge of the panel.
+const MAX_TICKS = 9;
 
 const getState = callable<[scope: string], State>("get_state");
 const setSetting = callable<[scope: string, key: string, value: string], State>("set_setting");
@@ -54,24 +57,40 @@ function Note({ children }: { children: ReactNode }) {
   );
 }
 
-function SettingRow({
-  setting,
+// A slider, not a dropdown: on the Legion Go at 2560x1600, the Quick Access view is 854 CSS pixels
+// wide and only 348 show. Steam centres a dropdown menu in that view, so the screen edge cuts it.
+function OptionSlider({
+  label,
+  options,
+  selected,
   disabled,
   onChange,
 }: {
-  setting: Setting;
-  disabled: boolean;
+  label: string;
+  options: Option[];
+  selected: string;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const index = Math.max(0, options.findIndex((o) => o.value === selected));
+  const [shown, setShown] = useState(index);
+  useEffect(() => setShown(index), [index]);
+  const ticks = options.length <= MAX_TICKS;
   return (
     <PanelSectionRow>
-      <DropdownItem
-        label={setting.label}
+      <SliderField
+        label={`${label}: ${options[shown]?.label ?? ""}`}
+        value={shown}
+        min={0}
+        max={options.length - 1}
+        step={1}
+        notchCount={ticks ? options.length : undefined}
+        notchTicksVisible={ticks}
         disabled={disabled}
-        rgOptions={setting.options.map((o) => ({ data: o.value, label: o.label }))}
-        selectedOption={setting.selected}
-        onChange={(o) => {
-          if (o.data !== setting.selected) onChange(o.data);
+        bottomSeparator="none"
+        onChange={(i) => {
+          setShown(i);
+          if (options[i] && options[i].value !== selected) onChange(options[i].value);
         }}
       />
     </PanelSectionRow>
@@ -87,31 +106,37 @@ function applyNote(state: State): string {
 function Content() {
   const [state, setState] = useState<State | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const busy = useRef(false);
+  const calls = useRef(0);
   const scope = useRef("");
 
-  // One call at a time, so that a poll cannot hide the result of a write.
   const run = async (call: () => Promise<State>, isWrite: boolean) => {
-    busy.current = true;
+    calls.current++;
     try {
       const next = await call();
       scope.current = next.scope;
       setState(next);
-      if (isWrite) setMessage(next.error ?? "Guardado.");
+      if (isWrite) setMessage(next.error ?? "Guardado. Se aplica al siguiente arranque.");
     } catch (e) {
       setMessage(`Error del plugin: ${e}`);
     } finally {
-      busy.current = false;
+      calls.current--;
     }
   };
 
   useEffect(() => {
     void run(() => getState(""), false);
     const timer = setInterval(() => {
-      if (!busy.current) void run(() => getState(scope.current), false);
+      // A poll waits for open calls, so that it cannot hide the result of a write.
+      if (calls.current === 0) void run(() => getState(scope.current), false);
     }, POLL_MS);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (message === null) return undefined;
+    const timer = setTimeout(() => setMessage(null), MESSAGE_MS);
+    return () => clearTimeout(timer);
+  }, [message]);
 
   if (state === null) {
     return (
@@ -134,27 +159,28 @@ function Content() {
   const multiplier = Number(byKey.frame_gen_multiplier?.effective ?? "2");
   const write = (key: string, value: string) => void run(() => setSetting(state.scope, key, value), true);
   const row = (key: string) =>
-    byKey[key] && <SettingRow setting={byKey[key]} disabled={locked} onChange={(v) => write(key, v)} />;
+    byKey[key] && (
+      <OptionSlider
+        label={byKey[key].label}
+        options={byKey[key].options}
+        selected={byKey[key].selected}
+        disabled={locked}
+        onChange={(v) => write(key, v)}
+      />
+    );
 
   return (
     <PanelSection>
-      <PanelSectionRow>
-        <DropdownItem
-          label="Ajustes de"
-          layout="below"
-          rgOptions={[
-            { data: GLOBAL_SCOPE, label: "Global" },
-            ...state.titles.map((t) => ({ data: t.id, label: t.name })),
-          ]}
-          selectedOption={state.scope}
-          onChange={(o) => {
-            setMessage(null);
-            void run(() => getState(o.data), false);
-          }}
-        />
-      </PanelSectionRow>
-      <Note>{applyNote(state)}</Note>
-      {message && <Note>{message}</Note>}
+      <OptionSlider
+        label="Ajustes de"
+        options={[
+          { value: GLOBAL_SCOPE, label: "Global" },
+          ...state.titles.map((t) => ({ value: t.id, label: t.name })),
+        ]}
+        selected={state.scope}
+        onChange={(v) => void run(() => getState(v), false)}
+      />
+      <Note>{message ?? applyNote(state)}</Note>
 
       <PanelSectionRow>
         <Focusable style={{ display: "flex", gap: "4px" }} flow-children="horizontal">

@@ -111,10 +111,19 @@ class SetInherit(unittest.TestCase):
         )
         self.assertEqual(result, expected)
 
-    def test_global_inherit_sets_default_and_keeps_the_value_line(self):
+    def test_global_inherit_sets_default_and_removes_the_value_line(self):
         result = ini.set_inherit(GLOBAL_TEXT, "Renderer", "dma_accuracy", per_game=False)
-        expected = GLOBAL_TEXT.replace("dma_accuracy\\default=false\n", "dma_accuracy\\default=true\n")
+        expected = GLOBAL_TEXT.replace(
+            "dma_accuracy\\default=false\ndma_accuracy=2\n", "dma_accuracy\\default=true\n"
+        )
         self.assertEqual(result, expected)
+
+    def test_after_a_global_reset_the_old_value_is_not_shown(self):
+        # With default=true the emulator ignores the value line, so "2x" would be false.
+        text = ini.set_value(GLOBAL_TEXT, "Renderer", "resolution_setup", "6", per_game=False)
+        text = ini.set_inherit(text, "Renderer", "resolution_setup", per_game=False)
+        values = ini.read_section(text, "Renderer")
+        self.assertEqual(ini.read_global(values, "resolution_setup"), ("inherit", None))
 
 
 class ReadState(unittest.TestCase):
@@ -144,6 +153,10 @@ class ReadState(unittest.TestCase):
         self.assertEqual(
             ini.read_game(self.game_values, self.global_values, "resolution_setup"), ("inherit", "3")
         )
+
+    def test_game_override_with_no_value_line_has_no_known_value(self):
+        game_values = {"frame_gen\\use_global": "false"}
+        self.assertEqual(ini.read_game(game_values, self.global_values, "frame_gen"), ("inherit", None))
 
     def test_game_with_no_lines_takes_the_global_value(self):
         self.assertEqual(ini.read_game({}, self.global_values, "dma_accuracy"), ("inherit", "2"))
@@ -287,7 +300,7 @@ class Config(unittest.TestCase):
             ini.apply_preset(self.dir, "global", preset["id"], running=False)
             text = self.read(self.global_path)
             for key, value in preset["values"].items():
-                self.assertIn(f"\n{key}={value}\n", text)
+                self.assertIn(f"\n{key}\\default=false\n{key}={value}\n", text)
 
 
 class Log(unittest.TestCase):

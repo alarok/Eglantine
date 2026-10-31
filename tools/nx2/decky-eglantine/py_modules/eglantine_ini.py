@@ -12,6 +12,10 @@ because the built-in defaults change between builds.
 
 The emulator reads and writes the global file at start, at each boot and at exit. It reads and
 writes a game file at the boot of that game and in the per-game dialog. See main_window.cpp.
+
+The panel shows the value line also when "key\\default=true". The boot writes the built-in default
+to that line, so the line is correct after one boot of the installed build. Before that boot, a
+new build with a new default can make the line old.
 """
 import os
 import re
@@ -40,10 +44,10 @@ SETTINGS = [
         "key": "resolution_setup",
         "section": "Renderer",
         "label": "Resolución",
+        # The list stops at 2x. On a Z1 Extreme, a high output resolution with FSR can hang the GPU.
         "options": [
             ("0", "0.25x"), ("1", "0.5x"), ("2", "0.75x"), ("3", "1x"), ("4", "1.25x"),
-            ("5", "1.5x"), ("6", "2x"), ("7", "3x"), ("8", "4x"), ("9", "5x"),
-            ("10", "6x"), ("11", "7x"), ("12", "8x"),
+            ("5", "1.5x"), ("6", "2x"),
         ],
     },
     {
@@ -180,7 +184,8 @@ def set_inherit(text, section, key, per_game):
     use_global = key + "\\use_global"
     if per_game:
         return _edit_section(text, section, {key, default, use_global}, [f"{use_global}=true"])
-    return _edit_section(text, section, {default}, [f"{default}=true"])
+    # The emulator writes the value line of its built-in default at the next boot.
+    return _edit_section(text, section, {key, default}, [f"{default}=true"])
 
 
 def read_section(text, section):
@@ -207,7 +212,7 @@ def read_game(game_values, global_values, key):
     if game_values.get(key + "\\use_global", "true") == "true":
         return INHERIT, read_global(global_values, key)[1]
     value = game_values.get(key)
-    return value, value
+    return (INHERIT if value is None else value), value
 
 
 def read_file(path):

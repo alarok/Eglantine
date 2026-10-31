@@ -31,6 +31,7 @@ A value applies at the next game start. The emulator has no reload path yet.
 - A write goes to a temporary file, then replaces the file in one step.
 - A value is always written with `key\default=false`. The plugin does not compare with a built-in default, because the defaults change between builds.
 - The first option of each control removes the value. In the global scope, it sets `key\default=true`. In a game scope, it sets `key\use_global=true`.
+- The panel uses sliders, not dropdowns. On the Legion Go at 2560x1600, Steam centres a dropdown menu in a view that is wider than the screen shows, so the screen edge cuts the menu.
 
 ## Writes while the emulator runs
 
@@ -60,6 +61,6 @@ python -B -m unittest discover -s tests
 
 ## Install
 
-Decky Settings, Developer, "Install plugin from ZIP" takes the zip when developer mode is on. The loader also takes a `file://` path in its install route.
+Decky's install route (`utilities/install_plugins`) takes a `file://` path to the zip. This was tested with Decky v3.3.1.
 
 To remove the plugin, use Decky Settings, Plugins. This does not remove the changed values or the `.decky-bak` files.
