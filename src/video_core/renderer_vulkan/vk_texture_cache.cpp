@@ -204,13 +204,14 @@ constexpr VkBorderColor ConvertBorderColor(const std::array<float, 4>& color) {
                                                            : (VkDeviceSize{768} << 20);
 }
 
-// The host format of a huge ASTC array: the GPU decoder's RGBA8 (sRGB kept for sampling).
+// The host format of a huge ASTC array: the GPU decoder's RGBA8. The base format is always UNORM,
+// and ImageView keeps sRGB for sampling. The decoder needs storage usage. With sRGB and storage
+// usage, AMD's driver gives a 0x0 sparse block and faults in vkQueueBindSparse.
 [[nodiscard]] std::optional<VkFormat> HugeAstcHostFormat(const Device& device, const ImageInfo& info) {
     if (!IsHugeAstcArray(device, info)) {
         return std::nullopt;
     }
-    return VideoCore::Surface::IsPixelFormatSRGB(info.format) ? VK_FORMAT_A8B8G8R8_SRGB_PACK32
-                                                              : VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+    return VK_FORMAT_A8B8G8R8_UNORM_PACK32;
 }
 
 constexpr std::array<VkFormat, 2> HugeAstcViewFormats{VK_FORMAT_A8B8G8R8_UNORM_PACK32,
