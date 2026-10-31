@@ -1003,7 +1003,8 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code) {
             if (right && !high_result && high == 255 && insn.Bits(73, 2) == 3 && shift != ~0U &&
                 insn.words[1] <= 255 &&
                 (insn.words[2] & ~(0x000118ffU | (opcode == 0xc19 ? 0x08000000U : 0U))) == 0x00000600U) {
-                emit(base(0x5c28000000000000ULL) | (u64{low} << 8) | (u64{shift} << 20));
+                emit(base(0x5c28000000000000ULL) | (u64{low} << 8) | (u64{shift} << 20) |
+                     (u64{insn.Bits(75, 1)} << 39));
                 break;
             }
             if (insn.words[1] > 255 || insn.Bits(73, 2) != 3 || shift == ~0U ||
@@ -1619,12 +1620,13 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code) {
                 const u32 components = static_cast<u32>(std::popcount(mask));
                 if (insn.Bits(79, 1)) {
                     // FP16 results: (c0, c1) packed into the first destination, (c2, c3) into
-                    // the second (F2F writes the half in the low 16 bits; ISCADD merges).
+                    // the second (F2F writes the half in the low 16 bits; ISCADD shifts its first
+                    // operand, so that operand is the high half).
                     const auto pack = [&](u32 target, u32 low, u32 high) {
                         if (target == 255) return;
                         emit(0x5ca8000000000000ULL | predicate | 246 | (u64{1} << 8) | (u64{2} << 10) | (u64{low} << 20));
                         emit(0x5ca8000000000000ULL | predicate | 247 | (u64{1} << 8) | (u64{2} << 10) | (u64{high} << 20));
-                        emit(0x5c18000000000000ULL | predicate | target | (u64{246} << 8) | (u64{247} << 20) | (u64{16} << 39));
+                        emit(0x5c18000000000000ULL | predicate | target | (u64{247} << 8) | (u64{246} << 20) | (u64{16} << 39));
                     };
                     pack(static_cast<u32>(dest), 250, components > 1 ? 251U : 255U);
                     if (components > 2) {
@@ -2200,40 +2202,62 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code) {
                     insn.Bits(77, 4) != 15 || insn.Bits(63, 1) || insn.Bits(72, 1))
                     return fail(index, "native constant add carry mode");
                 const u32 b = operand(1, false);
-                emit(base(0x5c10000000000000ULL) | (u64{insn.Bits(24, 8)} << 8) | (u64{b} << 20));
+                // RZ drops the sum, and the carry comparison still needs it.
+                const u32 sum = dest == 255 ? 250U : static_cast<u32>(dest);
+                emit(0x5c10000000000000ULL | predicate | sum | (u64{insn.Bits(24, 8)} << 8) | (u64{b} << 20));
                 emit(0x5b60000000000000ULL | predicate | 7 | (u64{insn.Bits(81, 3)} << 3) |
-                    (dest << 8) | (u64{b} << 20) | (u64{7} << 39) | (u64{1} << 49));
+                    (u64{sum} << 8) | (u64{b} << 20) | (u64{7} << 39) | (u64{1} << 49));
                 break;
             }
             if (opcode == 0xa10 && insn.Bits(74, 1)) {
-                if (insn.Bits(24, 8) != 255 || (insn.words[2] & ~0x07800000U) != 0x007fe4ffU)
+                if (insn.Bits(24, 8) != 255 || (insn.words[2] & ~0x07800000U) != 0x007fe4ffU ||
+                    insn.Bits(62, 1))
                     return fail(index, "native extended constant add mode");
                 const u32 b = operand(1, false);
                 mov_imm(250, 1);
                 emit(0x5ca0000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{255} << 20) |
                     (u64{insn.Bits(87, 3)} << 39) | (u64{insn.Bits(90, 1)} << 42));
-                emit(base(0x5c10000000000000ULL) | (u64{b} << 8) | (u64{250} << 20));
+                emit(base(0x5c10000000000000ULL) | (u64{b} << 8) | (u64{250} << 20) |
+                     (u64{insn.Bits(63, 1)} << 49));
                 break;
             }
             // Third source, optionally negated (bit 75; 63 and 72 negate b and a).
+            // Maxwell IADD reads both negate bits together as .PO, so a pair of negations
+            // subtracts the sum instead. Bit 63 of an immediate is its sign, not a negation.
+            const bool negate_a = insn.Bits(72, 1) != 0;
+            const bool negate_b = opcode != 0x810 && insn.Bits(63, 1);
             if (insn.Bits(64, 8) != 255 && (insn.Bits(73, 4) & ~4U) == 0 && insn.Bits(77, 7) == 0x7f && insn.Bits(84, 7) == 0x7f) {
                 const u32 b = operand(1, false);
+                const u32 c = insn.Bits(64, 8);
+                const bool negate_c = insn.Bits(75, 1) != 0;
+                if (negate_a && negate_b) {
+                    emit(0x5c10000000000000ULL | predicate | 250 | (u64{insn.Bits(24, 8)} << 8) | (u64{b} << 20));
+                    if (negate_c) {
+                        emit(0x5c10000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{c} << 20));
+                        emit(base(0x5c10000000000000ULL) | (u64{255} << 8) | (u64{250} << 20) | (u64{1} << 48));
+                    } else {
+                        emit(base(0x5c10000000000000ULL) | (u64{c} << 8) | (u64{250} << 20) | (u64{1} << 48));
+                    }
+                    break;
+                }
                 emit(0x5c10000000000000ULL | predicate | 250 | (u64{insn.Bits(24, 8)} << 8) |
-                    (u64{b} << 20) | (u64{insn.Bits(63, 1)} << 48) | (u64{insn.Bits(72, 1)} << 49));
-                emit(base(0x5c10000000000000ULL) | (u64{250} << 8) | (u64{insn.Bits(64, 8)} << 20) |
-                     (u64{insn.Bits(75, 1)} << 48));
+                    (u64{b} << 20) | (u64{negate_b} << 48) | (u64{negate_a} << 49));
+                emit(base(0x5c10000000000000ULL) | (u64{250} << 8) | (u64{c} << 20) |
+                     (u64{negate_c} << 48));
                 break;
             }
             if (insn.Bits(64, 8) != 255 || insn.Bits(73, 4) || insn.Bits(77, 7) != 0x7f || insn.Bits(84, 7) != 0x7f) return fail(index, "native integer carry/third source");
-            if (opcode == 0xa10 || opcode == 0xc10) {
+            if (opcode == 0x210 && (insn.words[1] & ~0x800000ffU)) return fail(index, "native integer add register modifiers");
+            if (opcode == 0xa10 || opcode == 0xc10 || opcode == 0x210) {
                 if (opcode == 0xc10 && (insn.words[1] & ~0x8000003fU)) return fail(index, "native uniform add operand");
-                const u32 b = operand(1, false);
-                emit(base(0x5c10000000000000ULL) | (u64{insn.Bits(24, 8)} << 8) | (u64{b} << 20) |
-                    (u64{insn.Bits(63, 1)} << 48) | (u64{insn.Bits(72, 1)} << 49));
-            } else if (opcode == 0x210) {
-                if (insn.words[1] & ~0x800000ffU) return fail(index, "native integer add register modifiers");
-                emit(base(0x5c10000000000000ULL) | (u64{insn.Bits(24, 8)} << 8) |
-                     (u64{insn.Bits(32, 8)} << 20) | (u64{insn.Bits(63, 1)} << 48) | (u64{insn.Bits(72, 1)} << 49));
+                const u32 b = opcode == 0x210 ? insn.Bits(32, 8) : operand(1, false);
+                if (negate_a && negate_b) {
+                    emit(0x5c10000000000000ULL | predicate | 250 | (u64{insn.Bits(24, 8)} << 8) | (u64{b} << 20));
+                    emit(base(0x5c10000000000000ULL) | (u64{255} << 8) | (u64{250} << 20) | (u64{1} << 48));
+                } else {
+                    emit(base(0x5c10000000000000ULL) | (u64{insn.Bits(24, 8)} << 8) | (u64{b} << 20) |
+                         (u64{negate_b} << 48) | (u64{negate_a} << 49));
+                }
             } else {
                 emit(base(0x1c00000000000000ULL) | (u64{insn.Bits(24, 8)} << 8) | (u64{insn.words[1]} << 20) | (u64{insn.Bits(72, 1)} << 56));
             }
