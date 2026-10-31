@@ -35,6 +35,7 @@
 #include "video_core/host1x/host1x.h"
 #include "video_core/host1x/syncpoint_manager.h"
 #include "video_core/memory_manager.h"
+#include "video_core/nx2_census.h"
 #include "video_core/renderer_base.h"
 #include "video_core/shader_notify.h"
 
@@ -141,7 +142,12 @@ struct GPU::Impl {
 
     void WaitForSyncOperation(const u64 fence) {
         std::unique_lock lck{sync_request_mutex};
-        sync_request_cv.wait(lck, [this, fence] { return CurrentSyncRequestFence() >= fence; });
+        // No thread runs the operation after the GPU threads stop. A core that waits here would
+        // keep the emulation from stopping.
+        sync_request_cv.wait(lck, [this, fence] {
+            return CurrentSyncRequestFence() >= fence ||
+                   shutting_down.load(std::memory_order_relaxed);
+        });
     }
 
     void WaitForIdle() {
@@ -186,6 +192,10 @@ struct GPU::Impl {
         std::unique_lock lk{sync_mutex};
         shutting_down.store(true, std::memory_order::relaxed);
         sync_cv.notify_all();
+        lk.unlock();
+        // Take the lock first, so that a thread between its check and its wait gets this wake.
+        { std::scoped_lock request_lock{sync_request_mutex}; }
+        sync_request_cv.notify_all();
     }
 
     /// Obtain the CPU Context
@@ -228,7 +238,10 @@ struct GPU::Impl {
                      raster_area.start_address, raster_area.end_address,
                      reads.load(std::memory_order_relaxed));
         }
-        const u64 fence = RequestSyncOperation([this, &raster_area]() {
+        // Copy the area. A wait that ends at shutdown leaves this operation in the queue.
+        const u64 fence = RequestSyncOperation([this, raster_area]() {
+            // Apply collected guest writes first. The download must not overwrite a newer write.
+            InvalidateGPUCache();
             renderer->ReadRasterizer()->FlushRegion(raster_area.start_address, raster_area.end_address - raster_area.start_address);
         });
         gpu_thread.TickGPU(is_async);
@@ -275,6 +288,9 @@ struct GPU::Impl {
             return false;
         }
         newest_composite_sequence = sequence;
+        if (VideoCommon::Nx2Census::Enabled()) {
+            VideoCommon::Nx2Census::NotePicture();
+        }
         return true;
     }
 

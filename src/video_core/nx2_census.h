@@ -99,8 +99,34 @@ inline void MacroEnd() {
     macro = {};
 }
 
+inline std::atomic<u64> g_draws_since_start{};
+
+/// Logs the draws between pictures, for 16 pictures in a row at each 600. A picture with 0 draws
+/// shows no new work, so a higher present rate can mean the same pictures again.
+inline void NotePicture() {
+    static std::mutex mutex;
+    static u64 last_draws{};
+    static u32 pictures{};
+    static std::array<u64, 16> draws{};
+    std::scoped_lock lock{mutex};
+    const u64 total = g_draws_since_start.load(std::memory_order_relaxed);
+    const u32 slot = pictures++ % 600;
+    if (slot < draws.size()) {
+        draws[slot] = total - last_draws;
+    }
+    last_draws = total;
+    if (slot + 1 == draws.size()) {
+        std::string line;
+        for (const u64 value : draws) {
+            line += fmt::format("{} ", value);
+        }
+        LOG_INFO(HW_GPU, "Census draws per picture: {}", line);
+    }
+}
+
 /// `vertices` and `instances` are the values the rasterizer gives to the host draw call.
 inline void CountDraw(bool indexed, u32 vertices, u32 instances, bool execute) {
+    g_draws_since_start.fetch_add(1, std::memory_order_relaxed);
     auto& macro = t_macro;
     macro.drew = true;
     const bool from_record = macro.active && (macro.from_record || macro.read_memory);
@@ -118,6 +144,7 @@ inline void CountDraw(bool indexed, u32 vertices, u32 instances, bool execute) {
 }
 
 inline void CountApiIndirect(bool execute) {
+    g_draws_since_start.fetch_add(1, std::memory_order_relaxed);
     t_macro.drew = true;
     Add(Count::ApiIndirect);
     if (!execute) {

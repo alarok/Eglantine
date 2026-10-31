@@ -28,6 +28,7 @@
 #include "common/lru_cache.h"
 #include "common/range_sets.h"
 #include "common/scope_exit.h"
+#include "common/nx2_ab.h"
 #include "common/settings.h"
 #include "common/slot_vector.h"
 #include "video_core/buffer_cache/buffer_base.h"
@@ -250,7 +251,7 @@ public:
     /// Without downloads at every fence, a guest CPU read is the only way GPU-written buffer
     /// data reaches guest memory, so reads must ask the buffer cache (GetFlushArea).
     bool FlushesOnCpuRead() const {
-        return !AsyncBufferDownloads();
+        return !AsyncBufferDownloads() && Common::Nx2Ab::On("readback");
     }
 
     bool InlineMemory(DAddr dest_address, size_t copy_size, std::span<const u8> inlined_buffer);
@@ -531,8 +532,8 @@ private:
     /// otherwise only when something flushes them (as upstream yuzu below High GPU accuracy).
     /// Not for Switch 2 titles: title 1 had 250-330 MB/s copied back (a fence per compute
     /// dispatch, the fencing thread holding the buffer cache while it wrote them), while its CPU
-    /// read GPU-written memory at most 64 times in 200 s (counted with reactive flushing) and
-    /// the native MME's DMA reads never touched those pages. Without them a fence costs ~1 us
+    /// flushed only about 8 reads of GPU-written memory a second (counted with reactive flushing)
+    /// and the native MME's DMA reads never touched those pages. Without them a fence costs ~1 us
     /// instead of ~5 and draw setup ~7% less. The titles that do read those pages back are listed
     /// in Nx2NeedsBufferDownloads (nx2.h). EDEN_NX2_BUFFER_DOWNLOADS=0/1 overrides both.
     bool AsyncBufferDownloads() const {
@@ -551,7 +552,9 @@ private:
     /// has read (Preflushable, set by the first reactive flush) always are: later reads skip the
     /// flush and rely on these downloads, e.g. collision meshes skinned by compute shaders.
     bool DownloadsAtFence(DAddr device_addr, u64 size) noexcept {
-        return AsyncBufferDownloads() || memory_tracker.IsRegionPreflushable(device_addr, size);
+        return AsyncBufferDownloads() ||
+               (Common::Nx2Ab::On("readback") &&
+                memory_tracker.IsRegionPreflushable(device_addr, size));
     }
 
     /// GPU writes that are not downloaded at fences: trap the guest CPU's next read of their
