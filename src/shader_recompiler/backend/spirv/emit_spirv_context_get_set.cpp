@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <bit>
+#include <cstdlib>
 #include <tuple>
 #include <utility>
 
@@ -490,6 +491,23 @@ void EmitSetFragColor(EmitContext& ctx, u32 index, u32 component, Id value) {
     const Id component_id{ctx.Const(component)};
     const AttributeType type{ctx.runtime_info.color_output_types[index]};
     if (type == AttributeType::Float) {
+        // EDEN_NAN_OUTPUTS=magenta|zero|big (diagnostic): float color outputs that are NaN or
+        // infinite become magenta, to find the draw that makes them, or zero. "big" also marks
+        // values over 4096 magenta. The shaders must compile again: use an empty shader cache.
+        static const char nan_outputs = [] {
+            const char* text = std::getenv("EDEN_NAN_OUTPUTS");
+            return text != nullptr ? text[0] : '\0';
+        }();
+        if (nan_outputs == 'm' || nan_outputs == 'z' || nan_outputs == 'b') {
+            Id bad{ctx.OpLogicalOr(ctx.U1, ctx.OpIsNan(ctx.U1, value), ctx.OpIsInf(ctx.U1, value))};
+            if (nan_outputs == 'b') {
+                bad = ctx.OpLogicalOr(ctx.U1, bad,
+                                      ctx.OpFOrdGreaterThan(ctx.U1, ctx.OpFAbs(ctx.F32[1], value),
+                                                            ctx.Const(4096.0f)));
+            }
+            const f32 replacement{nan_outputs != 'z' && component != 1 ? 1.0f : 0.0f};
+            value = ctx.OpSelect(ctx.F32[1], bad, ctx.Const(replacement), value);
+        }
         const Id pointer{ctx.OpAccessChain(ctx.output_f32, ctx.frag_color.at(index), component_id)};
         ctx.OpStore(pointer, value);
     } else if (type == AttributeType::UnsignedInt) {
