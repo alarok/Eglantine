@@ -267,7 +267,8 @@ struct GPU::Impl {
     bool AcceptCompositeSequence(u64 sequence) {
         std::unique_lock<std::mutex> lk(request_swap_mutex);
         if (sequence < newest_composite_sequence) {
-            if ((++stale_composites & (stale_composites - 1)) == 0) {
+            ++stale_composites;
+            if ((stale_composites & (stale_composites - 1)) == 0) {
                 LOG_WARNING(HW_GPU, "Dropped {} composites older than the frame on screen",
                             stale_composites);
             }
