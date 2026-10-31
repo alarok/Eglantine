@@ -262,9 +262,25 @@ struct GPU::Impl {
         gpu_thread.FlushAndInvalidateRegion(addr, size, is_async);
     }
 
+    /// Frames can wait on different syncpoints, so an older frame's fence can pass after a newer
+    /// one's. Showing that frame would move the picture back in time, so it is dropped.
+    bool AcceptCompositeSequence(u64 sequence) {
+        std::unique_lock<std::mutex> lk(request_swap_mutex);
+        if (sequence < newest_composite_sequence) {
+            if ((++stale_composites & (stale_composites - 1)) == 0) {
+                LOG_WARNING(HW_GPU, "Dropped {} composites older than the frame on screen",
+                            stale_composites);
+            }
+            return false;
+        }
+        newest_composite_sequence = sequence;
+        return true;
+    }
+
     void RequestComposite(std::vector<Tegra::FramebufferConfig>&& layers, std::vector<Service::Nvidia::NvFence>&& fences) {
         const size_t num_fences{fences.size()};
         size_t current_request_counter{};
+        const u64 sequence = composite_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
         if (num_fences != 0) {
             std::unique_lock<std::mutex> lk(request_swap_mutex);
             if (free_swap_counters.empty()) {
@@ -277,14 +293,16 @@ struct GPU::Impl {
             }
         }
         pending_composite_fence = RequestSyncOperation(
-            [this, current_request_counter, num_fences, composite_layers = std::move(layers),
-             composite_fences = std::move(fences)] {
+            [this, current_request_counter, num_fences, sequence,
+             composite_layers = std::move(layers), composite_fences = std::move(fences)] {
                 if (num_fences == 0) {
-                    renderer->Composite(composite_layers);
+                    if (AcceptCompositeSequence(sequence)) {
+                        renderer->Composite(composite_layers);
+                    }
                     return;
                 }
                 auto& syncpoint_manager = system.Host1x().GetSyncpointManager();
-                const auto executer = [this, current_request_counter, composite_layers]() {
+                const auto executer = [this, current_request_counter, sequence, composite_layers]() {
                     {
                         std::unique_lock<std::mutex> lk(request_swap_mutex);
                         if (--request_swap_counters[current_request_counter] != 0) {
@@ -292,7 +310,9 @@ struct GPU::Impl {
                         }
                         free_swap_counters.push_back(current_request_counter);
                     }
-                    renderer->Composite(composite_layers);
+                    if (AcceptCompositeSequence(sequence)) {
+                        renderer->Composite(composite_layers);
+                    }
                 };
                 for (size_t i = 0; i < num_fences; i++) {
                     syncpoint_manager.RegisterGuestAction(composite_fences[i].id,
@@ -367,6 +387,9 @@ struct GPU::Impl {
     std::deque<size_t> free_swap_counters;
     std::deque<size_t> request_swap_counters;
     std::mutex request_swap_mutex;
+    std::atomic<u64> composite_sequence{};
+    u64 newest_composite_sequence{};
+    u64 stale_composites{};
     u64 pending_composite_fence{};
 };
 
