@@ -192,6 +192,7 @@ Deku tests on a Legion Go 1 with SteamOS 3.9.5, a Z1 Extreme, and RADV. The BIOS
 - Files: `~/.config/eden/qt-config.ini`, `~/.config/eden/custom/<title>.ini`, `~/.local/share/eden`, and `~/.cache/eden/shader/<title in lower case>/`.
 - Only one session drives the console at a time. Ask the session that owns it. Scripts are in `D:/DEV/legion-go`, the notes are in its `INFORME.md`, and the global skill `steamos-remote-tuning` gives the SSH and Steam control method. Keep the host address and keys out of this repository.
 - Useful scripts: `trybananza.sh <label> [key=value]` with `GAME_ENV`, `watch3d.sh <label> <count> <gap>`, `black3d.py`, `sheet.py`, `census_join.py`, `padkey.py`, `eden_game_set.py`, `eglantine_config.py`.
+- The Decky plugin in `tools/nx2/decky-eglantine` changes a small set of settings from the Quick Access menu. Its `README.md` gives the build and the file rules.
 
 Traps on the console:
 
