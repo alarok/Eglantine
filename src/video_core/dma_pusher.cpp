@@ -554,6 +554,9 @@ bool DmaPusher::FlushGpuWrittenWindow(GPUVAddr address, size_t size) {
         }
         return false;
     }
+    // Guest stores on these pages can still wait for a gather. Apply them first. If not, the
+    // download writes the older host bytes over them.
+    rasterizer->InvalidateGPUCache();
     memory_manager.FlushRegion(begin, bytes, VideoCommon::CacheType::BufferCache);
     note_current();
     return true;

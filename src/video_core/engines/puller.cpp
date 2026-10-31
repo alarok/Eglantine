@@ -254,11 +254,17 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
             return;
         }
         VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::AcquireChecks, 1);
+        // The guest can write what the next commands read just before it releases the semaphore.
+        // Apply these writes when the acquire is met.
+        const auto apply_guest_writes = [&dma_pusher] {
+            OnBack([rasterizer = dma_pusher.rasterizer] { rasterizer->InvalidateGPUCache(); });
+        };
         // A counter that already reached the value stays there, so nothing queued on the back can
         // change the result. The word in guest memory can only be older, and the rasterizer belongs
         // to the back. The other operations need what the back has queued.
         if (op == GpuSemaphoreOperation::AcquireGequal) {
             if (acquire.Matches(dma_pusher.memory_manager.Read<u32>(acquire.address))) {
+                apply_guest_writes();
                 return;
             }
             // A release that meets it is still queued: the back runs that release first.
@@ -266,6 +272,7 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
                 const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address);
                 const u32* const queued = device ? split.QueuedRelease(*device) : nullptr;
                 if (queued != nullptr && acquire.Matches(*queued)) {
+                    apply_guest_writes();
                     return;
                 }
             }
@@ -294,6 +301,7 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
                     VideoCommon::Nx2Profile::Add(Counter::AcquireByDma, 1);
                 }
             }
+            apply_guest_writes();
             return;
         }
         // Registered before the fences run, so a release among them that meets the value counts
@@ -308,6 +316,7 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
             VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::AcquireWaits, 1);
         } else {
             waiters.Remove(this);
+            apply_guest_writes();
         }
     } else {
         DrainBack();

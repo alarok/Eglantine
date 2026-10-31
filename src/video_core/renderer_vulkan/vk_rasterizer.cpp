@@ -1179,6 +1179,33 @@ void RasterizerVulkan::OnCacheInvalidation(DAddr addr, u64 size) {
     pipeline_cache.InvalidateRegion(addr, size);
 }
 
+void RasterizerVulkan::OnCachedWrite(DAddr addr, u64 size) {
+    // EDEN_NX2_CACHED_WRITE=0 restores the whole page mark, to compare the two paths.
+    static const bool cached_write = [] {
+        const char* const value = std::getenv("EDEN_NX2_CACHED_WRITE");
+        return value == nullptr || std::string_view{value} != "0";
+    }();
+    if (!cached_write || !Common::Nx2Ab::On("cached_write")) {
+        OnCacheInvalidation(addr, size);
+        return;
+    }
+    if (addr == 0 || size == 0) {
+        return;
+    }
+    {
+        std::scoped_lock lock{texture_cache.mutex};
+        texture_cache.WriteMemory(addr, size);
+    }
+    {
+        // Send only these bytes and keep the page protected while it holds GPU written ranges.
+        // A whole page mark lets later guest writes on the page go unreported. These writes stay
+        // inside the GPU written ranges, so no upload sends them.
+        std::scoped_lock lock{buffer_cache.mutex};
+        buffer_cache.CachedWriteMemory(addr, size);
+    }
+    pipeline_cache.InvalidateRegion(addr, size);
+}
+
 bool RasterizerVulkan::TryCacheInvalidation(DAddr addr, u64 size) {
     if (addr == 0 || size == 0) return true;
     {

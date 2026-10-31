@@ -69,6 +69,13 @@ void Scheduler::ResumePending(GPU& gpu) {
             if (!dma_pusher.HasPendingAcquire() || !dma_pusher.CanResumeAcquire()) {
                 continue;
             }
+            // The guest can write what this channel reads next just before it releases the
+            // semaphore. Apply these writes first.
+            if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
+                split.Defer([gpu_ptr = &gpu] { gpu_ptr->InvalidateGPUCache(); });
+            } else {
+                gpu.InvalidateGPUCache();
+            }
             BindChannel(gpu, state->bind_id);
             dma_pusher.DispatchCalls();
             progress = true;
