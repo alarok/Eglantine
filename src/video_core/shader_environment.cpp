@@ -907,7 +907,10 @@ void SerializePipeline(std::span<const char> key, std::span<const GenericEnviron
 void LoadPipelines(
     std::stop_token stop_loading, const std::filesystem::path& filename, u32 expected_cache_version,
     Common::UniqueFunction<void, std::ifstream&, FileEnvironment> load_compute,
-    Common::UniqueFunction<void, std::ifstream&, std::vector<FileEnvironment>> load_graphics) try {
+    Common::UniqueFunction<void, std::ifstream&, std::vector<FileEnvironment>> load_graphics) {
+    // The size of the file up to the last complete record. 0 until the header is valid.
+    std::uintmax_t complete_size{};
+    try {
     std::ifstream file(filename, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         return;
@@ -936,6 +939,7 @@ void LoadPipelines(
         }
         return;
     }
+    complete_size = static_cast<std::uintmax_t>(std::streamoff{file.tellg()});
     while (file.tellg() != end) {
         if (stop_loading.stop_requested()) {
             return;
@@ -951,13 +955,25 @@ void LoadPipelines(
         } else {
             load_graphics(file, std::move(envs));
         }
+        complete_size = static_cast<std::uintmax_t>(std::streamoff{file.tellg()});
     }
 
-} catch (const std::ios_base::failure& e) {
-    LOG_ERROR(Common_Filesystem, "{}", e.what());
-    if (!Common::FS::RemoveFile(filename)) {
-        LOG_ERROR(Common_Filesystem, "Failed to delete pipeline cache file {}",
-                  Common::FS::PathToUTF8String(filename));
+    } catch (const std::ios_base::failure& e) {
+        LOG_ERROR(Common_Filesystem, "{}", e.what());
+        // A process that stops during a write cuts only the last record. Keep the others. The
+        // stream closed when the try block ended, so the file can be resized.
+        if (complete_size != 0) {
+            std::error_code error;
+            std::filesystem::resize_file(filename, complete_size, error);
+            if (!error) {
+                LOG_WARNING(Common_Filesystem, "Pipeline cache file: removed a cut last record");
+                return;
+            }
+        }
+        if (!Common::FS::RemoveFile(filename)) {
+            LOG_ERROR(Common_Filesystem, "Failed to delete pipeline cache file {}",
+                      Common::FS::PathToUTF8String(filename));
+        }
     }
 }
 
