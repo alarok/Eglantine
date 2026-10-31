@@ -1,6 +1,6 @@
 {
   "name": "decky-eglantine",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Eglantine settings in the Steam Quick Access menu",
   "type": "module",
   "private": true,

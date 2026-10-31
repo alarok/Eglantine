@@ -43,6 +43,14 @@ The emulator writes a game file only at the boot of that game and in the per-gam
 
 The panel takes the title from the last `Loading <name> (<title>) ...` line in `~/.local/share/eden/log/eden_log.txt`. The name of a loose dump is `Unknown program`, so a short table in `eglantine_ini.py` gives the known names.
 
+## Emulator build
+
+The panel shows the build that the scripts `~/Applications/*.sh` start. It reads the `alarok/Eglantine` releases when the panel opens. The plugin has no timer for this.
+
+- "Actualizar" downloads the `steamdeck-pgo` AppImage of the highest `build-N` to `~/Applications/eglantine-build<N>-steamdeck-pgo.AppImage`. A download with the wrong SHA-256 changes nothing.
+- "Volver" selects the highest lower build on the disk.
+- Both buttons change only the AppImage name in each script. The plugin keeps old builds and does not touch a settings file. Both refuse while the emulator runs.
+
 ## Build
 
 Node.js and pnpm are necessary. Give a work folder outside the repository:

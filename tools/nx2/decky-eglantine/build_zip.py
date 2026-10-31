@@ -17,7 +17,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 PLUGIN_FOLDER = "decky-eglantine"
 BUILD_INPUTS = ["package.json", "plugin.json", "pnpm-lock.yaml", "rollup.config.js", "tsconfig.json"]
-ZIP_FILES = ["main.py", "plugin.json", "package.json", "README.md", "py_modules/eglantine_ini.py"]
+ZIP_FILES = [
+    "main.py",
+    "plugin.json",
+    "package.json",
+    "README.md",
+    "py_modules/eglantine_ini.py",
+    "py_modules/eglantine_update.py",
+]
 
 
 def run(work, *args):

@@ -39,6 +39,16 @@ interface State {
   error: string | null;
 }
 
+interface Build {
+  available: boolean;
+  busy?: boolean;
+  current?: number[];
+  latest?: number | null;
+  update?: boolean;
+  previous?: number | null;
+  error?: string | null;
+}
+
 const GLOBAL_SCOPE = "global";
 const POLL_MS = 3000;
 const MESSAGE_MS = 5000;
@@ -48,6 +58,9 @@ const MAX_TICKS = 9;
 const getState = callable<[scope: string], State>("get_state");
 const setSetting = callable<[scope: string, key: string, value: string], State>("set_setting");
 const applyPreset = callable<[scope: string, preset: string], State>("apply_preset");
+const checkBuild = callable<[], Build>("check_build");
+const updateBuild = callable<[], Build>("update_build");
+const rollbackBuild = callable<[], Build>("rollback_build");
 
 function Note({ children }: { children: ReactNode }) {
   return (
@@ -101,6 +114,67 @@ function applyNote(state: State): string {
   if (!state.running) return "Se aplica al siguiente arranque del juego.";
   if (state.scope === GLOBAL_SCOPE) return "Eglantine está abierto. Ciérralo para cambiar lo global.";
   return "Juego en marcha. Se aplica al volver a arrancarlo.";
+}
+
+function BuildSection({ running }: { running: boolean }) {
+  const [build, setBuild] = useState<Build | null>(null);
+  const [working, setWorking] = useState<string | null>(null);
+
+  const run = async (text: string | null, call: () => Promise<Build>) => {
+    setWorking(text);
+    try {
+      setBuild(await call());
+    } catch (e) {
+      setBuild((b) => ({ ...(b ?? { available: true }), error: `Error del plugin: ${e}` }));
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  useEffect(() => {
+    void run(null, checkBuild);
+  }, []);
+
+  // A download goes on when the panel closes. A panel that opens later looks again until it ends.
+  useEffect(() => {
+    if (!build?.busy) return undefined;
+    const timer = setInterval(() => void run(null, checkBuild), POLL_MS);
+    return () => clearInterval(timer);
+  }, [build?.busy]);
+
+  if (!build?.available) return null;
+  const blocked = running || working !== null || !!build.busy;
+  const status = build.current ? `Build ${build.current.join(" y ")}.` : "";
+  const next = build.update ? ` Hay build ${build.latest}.` : build.latest ? " No hay otra más nueva." : "";
+  return (
+    <PanelSection title="Build">
+      <Note>{working ?? (build.busy ? "Descargando una build..." : status + next)}</Note>
+      {build.error && <Note>{build.error}</Note>}
+      {running && (build.update || build.previous) && <Note>Cierra Eglantine para cambiar de build.</Note>}
+      {build.update && (
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            disabled={blocked}
+            onClick={() => void run(`Descargando build ${build.latest}...`, updateBuild)}
+          >
+            Actualizar a build {build.latest}
+          </ButtonItem>
+        </PanelSectionRow>
+      )}
+      {build.previous && (
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            disabled={blocked}
+            onClick={() => void run(`Volviendo a build ${build.previous}...`, rollbackBuild)}
+          >
+            Volver a build {build.previous}
+          </ButtonItem>
+        </PanelSectionRow>
+      )}
+    </PanelSection>
+  );
 }
 
 function Content() {
@@ -170,6 +244,7 @@ function Content() {
     );
 
   return (
+    <>
     <PanelSection>
       <OptionSlider
         label="Ajustes de"
@@ -230,6 +305,8 @@ function Content() {
         </>
       )}
     </PanelSection>
+    <BuildSection running={state.running} />
+    </>
   );
 }
 
