@@ -320,15 +320,6 @@ constexpr int default_input_update_timeout = 1;
 
 constexpr size_t CopyBufferSize = 1_MiB;
 
-/**
- * "Callouts" are one-time instructional messages shown to the user. In the config settings, there
- * is a bitfield "callout_flags" options, used to track if a message has already been shown to the
- * user. This is 32-bits - if we have more than 32 callouts, we should retire and recycle old ones.
- */
-enum class CalloutFlag : uint32_t {
-    DRDDeprecation = 0x2,
-};
-
 const int MainWindow::max_recent_files_item;
 
 namespace {
@@ -1840,24 +1831,6 @@ bool MainWindow::LoadROM(const QString& filename, Service::AM::FrontendAppletPar
     /** Exec */
     const Core::SystemResultStatus result{
         QtCommon::system->Load(*render_window, filename.toStdString(), params)};
-
-    const auto drd_callout = (UISettings::values.callout_flags.GetValue() &
-                              static_cast<u32>(CalloutFlag::DRDDeprecation)) == 0;
-
-    if (result == Core::SystemResultStatus::Success &&
-        QtCommon::system->GetAppLoader().GetFileType() ==
-            Loader::FileType::DeconstructedRomDirectory &&
-        drd_callout) {
-        UISettings::values.callout_flags = UISettings::values.callout_flags.GetValue() |
-                                           static_cast<u32>(CalloutFlag::DRDDeprecation);
-        QMessageBox::warning(
-            this, tr("Warning: Outdated Game Format"),
-            tr("You are using the deconstructed ROM directory format for this game, which is an "
-               "outdated format that has been superseded by others such as NCA, NAX, XCI, or "
-               "NSP. Deconstructed ROM directories lack icons, metadata, and update "
-               "support.<br>For an explanation of the various Switch formats Eglantine supports, "
-               "out our user handbook. This message will not be shown again."));
-    }
 
     if (result != Core::SystemResultStatus::Success) {
         switch (result) {
