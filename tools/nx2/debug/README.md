@@ -62,6 +62,11 @@ The first line of a capture holds the reason. Each next line is one pushbuffer e
 - `session.ps1`: use it for a quick summary of one log: error counts, last frame times and GPU memory.
   `powershell -File session.ps1 -Log <eden_log.txt>`
 
+## Shader cache tools
+
+- `pipecache.py`: use it to read a shader disk cache (`vulkan.bin`) without the emulator. It counts pipelines and groups them by device features. With two files it shows the keys they share, and how the other keys differ.
+  `python pipecache.py <vulkan.bin> [<other vulkan.bin>]`
+
 ## Process tools
 
 - `threads.py`: use it to see the CPU use of each thread of a running process.
