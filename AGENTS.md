@@ -80,6 +80,7 @@ Start a release after `compile-check` passes.
 A new dispatch on the same branch cancels the release that runs (`cancel-in-progress`). Wait for it to end, or accept the loss.
 To test a build with no release, dispatch with `-f publish_release=false`. Each job uploads its artifact when that job ends, so the AppImage for a handheld is ready before the slow jobs end.
 `linux-aarch64`, `linux-aarch64-pgo` and `macos-arm64` are experimental: a failure does not stop the release, and the build step has a limit of 75 minutes. Nobody has run these files yet.
+`actionlint` needs `shellcheck` on `PATH`. Without it, a local run passes and the CI validation can still fail, and then the release does not publish.
 Do not push a change to `.github/workflows` while a release runs. `gh release create --target` then gets HTTP 403, because the job token cannot have the `workflows` permission.
 If this occurs, download the run artifacts and publish them with `gh-alarok`. Recompile nothing.
 After a release, set the title to `Eglantine 0.<n> (build <run number>)` and write notes with `gh release edit`. Use these parts: which file to use, main changes, what was tested, known faults. Copy the shape of `build-26`.

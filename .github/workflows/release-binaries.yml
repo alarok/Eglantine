@@ -444,9 +444,9 @@ jobs:
           mkdir -p "$tools"
           arch=$(uname -m)   # aarch64 or x86_64
           curl -fsSL -o "$tools/linuxdeploy-$arch.AppImage" \
-          https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$arch.AppImage
+            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$arch.AppImage"
           curl -fsSL -o "$tools/linuxdeploy-plugin-qt-$arch.AppImage" \
-          https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-$arch.AppImage
+            "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-$arch.AppImage"
           chmod +x "$tools"/*.AppImage
           # The desktop file names its icon dev.eglantine.eglantine.
           icon="$RUNNER_TEMP/dev.eglantine.eglantine.png"
@@ -474,7 +474,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$(brew --prefix qt@6)/bin:$PATH"
+          qt_prefix="$(brew --prefix qt@6)"
+          export PATH="$qt_prefix/bin:$PATH"
           app=build/release/bin/eglantine.app
           test -d "$app"
           macdeployqt "$app"
