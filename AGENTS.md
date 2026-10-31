@@ -173,7 +173,9 @@ Debug tools in Git are in `tools/nx2/debug/`, with a README. The skill `nx2-debu
 - A log line can have a limit. `Draw skipped` logs once per shader pair. The census `failed` count has no limit.
 - Non-NVIDIA cards take other shader paths. `EDEN_NX2_NO_NV_GEOMETRY=1` sends an NVIDIA card down those paths, so test them on the PC first.
 - These settings have no effect on Switch 2 titles: `memory_layout_mode`, because `core.cpp` forces 12 GiB, and `fast_cpu_time`, which only the Android interface reads.
-- `gpu_accuracy=1` (High, Accurate in the GUI) does not start the split GPU thread. `gpu_accuracy=0` starts it, except with safe DMA. Test both.
+- `gpu_accuracy=1` (High, Accurate in the GUI) does not start the split GPU thread. `gpu_accuracy=0` starts it, except with safe or accurate DMA. Test both.
+- The defaults on all platforms are GPU Low (Fast in the GUI), DMA Default and reactive flushing off. A value that the user set in the GUI stays, so check `dma_accuracy` in the config before you compare.
+- A higher present rate can show the same pictures again. `Census draws per picture` shows it: a real picture has real draws. A burst of saved frames does not show it, because `m_capture_pending` drops every second present.
 
 Game titles: Bananza `040074A01BF12000`, Mario Kart World `0400C3F00006E000`, Pokopia `0400A3A01EE4C000`.
 
@@ -199,7 +201,9 @@ Traps on the console:
 
 ## Open faults on 2026-10-31
 
-- Black 3D view in Bananza. 99.95% of the 3D area is exactly 0, and the HUD stays. On the console, before the floor fix, 26 of 28 captures were black with asynchronous GPU, and 0 of 28 with it off. On the PC, 1 of 4 runs on the NVIDIA path. Which GPU-written value the guest reads is not known. Asynchronous shaders and BC3 are not the required cause.
+- Black 3D view in Bananza. 99.95% of the 3D area is exactly 0, and the HUD stays. On the console with build 27: GPU High with asynchronous GPU gave 6 of 12 and 11 of 14 black captures. GPU Low gave 0 of 56 with asynchronous GPU and 0 of 56 without it. Which GPU-written value the guest reads is not known. Asynchronous shaders and BC3 are not the required cause.
+- Mario Kart World colliders under read traps: the rail on Dino Dino Jungle needs a person to check. Tests stop at the start line, so a driven race is not measured.
+- Reactive flushing off has no test on Switch 1 titles.
 - Bananza handheld crop, frozen movie panel on the console, halos on the console, and the hang when the game stops.
 
 Add a trap to this file when you learn one. Remove a fault when a test closes it.

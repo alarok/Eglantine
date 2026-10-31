@@ -69,6 +69,7 @@ Read the result with `python -B tools/nx2/debug/ab_means.py <log> <first second>
 - Settings differ between Deku's GUI and a test. Run `python -B tools/nx2/debug/ini_diff.py <his qt-config.ini> <run>/probe.ini` before you compare his result with yours. The tool does not print paths or keys. Read his file only, and never start a test on his profile.
 - `matrix.py` removes each `EDEN_NX2_*` variable from the child. Use `MATRIX_EXTRA_ENV`. A variable set in the parent shell does not reach the game.
 - The split GPU thread does not start at `gpu_accuracy=1`, which is the default of `matrix.py`. Use `seed-play-acc0` to run with it. The macro tags take another path there, so test both.
+- A higher frame rate can show the same pictures again. Read `Census draws per picture`. A burst of saved frames cannot show this, because a capture that waits drops the next present.
 - A 10 s window hides a short event. Use `EDEN_NX2_DRAW_CENSUS_SECONDS=2`.
 - `Enabled()` values read at program start cannot see `nx2_switches.txt`, because `main()` reads that file later. Read a new switch at first use.
 - A successful `Track` does not prove a mapped store: it follows a loaded pointer to the constant buffer that holds the list. Count the store as lost with `ReachesCbufWithoutLoad`, not with the result of `Track`.

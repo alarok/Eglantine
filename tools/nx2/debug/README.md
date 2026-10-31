@@ -25,6 +25,7 @@ Only `play.ps1` and `matrix.py` start it.
   `EDEN_RENDERDOC_PATH=<template>` sets the path of the capture files.
 - `EDEN_NX2_RDOC_PRESENTS=<n>[,<n>...]` makes one RenderDoc capture from present `n` to present `n+2`. Keep the numbers at least 3 apart.
 - `EDEN_NX2_FRAME_CAPTURE_EVERY=<n>` changes the interval of the saved frames from 120 presents.
+- `EDEN_NX2_FRAME_CAPTURE_BURST=<n>` saves the first `n` presents of each interval. Only about every second present is saved, because a capture that waits drops the next one. A burst cannot show repeated pictures. Use `Census draws per picture` for that.
 - `EDEN_NX2_NO_NV_GEOMETRY=1` hides `VK_NV_geometry_shader_passthrough`, `VK_NV_viewport_array2` and `VK_NV_viewport_swizzle`. An NVIDIA card then takes the shader paths of AMD and Intel. Use an empty shader cache.
 - `EDEN_NX2_KEEP_ASTC=1` turns off the BC3 texture mode that low VRAM selects.
 - `EDEN_NX2_VRAM_LIMIT_MIB=<n>` treats each device-local heap as `<n>` MiB, to test a smaller card.
@@ -41,6 +42,7 @@ Only `play.ps1` and `matrix.py` start it.
 A draw that draws nothing shows no error. Only these counts show it.
 
 - `Census draws`: `macro_indirect` counts the draws of macros that got a draw record. A record is a small command entry that points at words the GPU wrote. `api_indirect` counts host indirect draws. The census does not read their counts.
+- `Census draws per picture`: the draws between pictures, for 16 pictures in a row at each 600. A picture with 0 draws shows no new work, so a higher present rate can mean the same pictures again.
 - `Census zero draws`: draws with 0 vertices or 0 copies. A record with 0 triangles usually gives a zero draw. This is normal for a mesh that culling removed.
 - `macro_record_no_draw`: macros that got a record and drew nothing. A record with 0 copies gives this, because the macro has no copy to draw.
 - `Census top macros`: the macros with the most of these counts. The number is the macro's start position, as in the `Native MME` log lines.
