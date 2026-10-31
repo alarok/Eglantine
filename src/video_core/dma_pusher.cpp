@@ -150,12 +150,16 @@ bool DmaPusher::Step() {
                 CheckSubmitHash(header, command_list.submit_hashes[dma_pushbuffer_subindex]);
             }
         }
-        // A resumed entry is read again: the words after the acquire may be new by now.
+        // An entry on GPU-written pages is read again when it resumes after an acquire.
         // A safe read flushes the caches, which belong to the split's back thread while it runs
         // (the split only starts with unsafe reads; the settings can change mid-game).
         const bool use_safe = !VideoCommon::GpuSplit::Get().Active() &&
                               (Settings::IsDMALevelDefault() ? Settings::IsGPULevelHigh() : Settings::IsDMALevelSafe());
-        if (use_safe) {
+        if (const auto submitted = SubmittedWords(command_list); !submitted.empty()) {
+            RecordParsedEntry(header, submitted);
+            command_resume_offset +=
+                ProcessCommands(submitted.subspan(command_resume_offset), command_resume_offset);
+        } else if (use_safe) {
             Tegra::Memory::GpuGuestMemory<Tegra::CommandHeader, Tegra::Memory::GuestMemoryFlags::SafeRead>headers(memory_manager, dma_state.dma_get, header.size, &command_headers);
             const std::span<const CommandHeader> commands{headers.data(), headers.size()};
             RecordParsedEntry(header, commands);
@@ -446,6 +450,37 @@ void DmaPusher::CallMultiMethod(const u32* base_start, u32 num_methods) {
     }
 }
 
+bool DmaPusher::OnGpuWrittenPages(GPUVAddr address, size_t size) {
+    // Pending dispatches must mark their written pages before this lookup.
+    if (VideoCommon::GpuSplit::Get().Active()) {
+        VideoCommon::GpuSplit::Get().Drain();
+    }
+    for (GPUVAddr page = address & ~GPUVAddr{0xfff}; page < address + size; page += 0x1000) {
+        if (const auto device = memory_manager.GpuToCpuAddress(page);
+            device && Tegra::Nx2IsGpuWritten(*device)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The guest does not always wait for a list before it writes that command memory again. Title 4
+// does this when the GPU thread is late, or when a channel waits on an acquire and the guest keeps
+// running. The words then change before they run and the stream breaks. So the words run as they
+// were at submit. Words on pages the GPU writes must be new (a dispatch fills them), so these are
+// read when they run.
+std::span<const CommandHeader> DmaPusher::SubmittedWords(const CommandList& list) {
+    if (dma_pushbuffer_subindex + 1 >= list.snapshot_offsets.size()) {
+        return {};
+    }
+    const u32 first = list.snapshot_offsets[dma_pushbuffer_subindex];
+    const u32 count = list.snapshot_offsets[dma_pushbuffer_subindex + 1] - first;
+    if (OnGpuWrittenPages(dma_state.dma_get, size_t{count} * sizeof(u32))) {
+        return {};
+    }
+    return std::span<const CommandHeader>{list.snapshot}.subspan(first, count);
+}
+
 void DmaPusher::FlushGpuWrittenCommands(GPUVAddr address, size_t size) {
     // Title 1 runs small command lists its culling dispatches fill in each frame. Accurate GPU
     // mode reads every command list through the caches (safe reads); here only the ones on pages
@@ -453,19 +488,7 @@ void DmaPusher::FlushGpuWrittenCommands(GPUVAddr address, size_t size) {
     if (!Tegra::g_nx2_ampere.load(std::memory_order_relaxed) || size == 0) {
         return;
     }
-    // Pending dispatches must mark their written pages before this lookup.
-    if (VideoCommon::GpuSplit::Get().Active()) {
-        VideoCommon::GpuSplit::Get().Drain();
-    }
-    bool written = false;
-    for (GPUVAddr page = address & ~GPUVAddr{0xfff}; page < address + size; page += 0x1000) {
-        if (const auto device = memory_manager.GpuToCpuAddress(page);
-            device && Tegra::Nx2IsGpuWritten(*device)) {
-            written = true;
-            break;
-        }
-    }
-    if (!written) {
+    if (!OnGpuWrittenPages(address, size)) {
         return;
     }
     if (memory_manager.IsMemoryDirty(address, size, VideoCommon::CacheType::BufferCache)) {

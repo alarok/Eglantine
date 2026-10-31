@@ -117,6 +117,10 @@ struct CommandList final {
     boost::container::small_vector<CommandHeader, 512> prefetch_command_list;
     /// EDEN_NX2_PB_CHECK: hash of each entry's words when it was submitted.
     std::vector<u64> submit_hashes;
+    /// The words of all entries at submit, and where each entry starts in them (one extra offset
+    /// at the end). See DmaPusher::SubmittedWords.
+    std::vector<CommandHeader> snapshot;
+    std::vector<u32> snapshot_offsets;
 };
 
 /// FNV-1a over pushbuffer words (EDEN_NX2_PB_CHECK).
@@ -175,6 +179,8 @@ private:
     [[nodiscard]] bool WantsSegment() const;
     void ReportUnboundSubchannel();
     void WatchArgument(u32 method, u32 argument) const;
+    [[nodiscard]] bool OnGpuWrittenPages(GPUVAddr address, size_t size);
+    [[nodiscard]] std::span<const CommandHeader> SubmittedWords(const CommandList& list);
 
 public:
     /// Logs the GPFIFO entry being processed (and the one before it), read through the GPU MMU

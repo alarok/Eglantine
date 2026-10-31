@@ -443,6 +443,28 @@ NvResult nvhost_gpu::SubmitGPFIFOImpl(IoctlSubmitGpfifo& params, Tegra::CommandL
                 entries.submit_hashes.push_back(Tegra::HashPushbufferWords(words));
             }
         }
+        // The guest can rewrite these words before the GPU thread reads them. See
+        // DmaPusher::SubmittedWords. EDEN_NX2_PB_SNAPSHOT=0 reads them when they run.
+        static const bool snapshot = [] {
+            const char* value = std::getenv("EDEN_NX2_PB_SNAPSHOT");
+            return value == nullptr || value[0] != '0';
+        }();
+        if (snapshot && channel_state->memory_manager) {
+            size_t total = 0;
+            entries.snapshot_offsets.reserve(entries.command_lists.size() + 1);
+            for (const auto& entry : entries.command_lists) {
+                entries.snapshot_offsets.push_back(static_cast<u32>(total));
+                total += entry.size;
+            }
+            entries.snapshot_offsets.push_back(static_cast<u32>(total));
+            entries.snapshot.resize(total);
+            for (size_t i = 0; i < entries.command_lists.size(); ++i) {
+                const auto& entry = entries.command_lists[i];
+                channel_state->memory_manager->ReadBlockUnsafe(
+                    entry.addr.Value(), entries.snapshot.data() + entries.snapshot_offsets[i],
+                    size_t{entry.size} * sizeof(u32));
+            }
+        }
     }
 
     auto& flags = params.flags;
