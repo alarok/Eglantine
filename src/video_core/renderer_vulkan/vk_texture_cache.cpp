@@ -3704,7 +3704,7 @@ void TextureCacheRuntime::TranscodeAstcToBcn(
             .queueFamilyIndexCount = 0,
             .pQueueFamilyIndices = nullptr,
             .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        }, true),
+        }),
         .views = {},
     };
     for (u32 level = 0; level < levels; ++level) {
