@@ -358,7 +358,11 @@ struct Values {
                                                   true};
 
     SwitchableSetting<ScalingFilter> scaling_filter{linkage,
+#ifdef __ANDROID__
                                                     ScalingFilter::NearestNeighbor,
+#else
+                                                    ScalingFilter::Fsr3,
+#endif
                                                     "scaling_filter",
                                                     Category::Renderer,
                                                     Specialization::Default,
@@ -511,11 +515,7 @@ struct Values {
                                          linkage, 0, "bg_blue", Category::Renderer, Specialization::Default, true, true};
 
     SwitchableSetting<GpuAccuracy, true> gpu_accuracy{linkage,
-#ifdef __ANDROID__
                                                       GpuAccuracy::Low,
-#else
-                                                      GpuAccuracy::High,
-#endif
                                                       "gpu_accuracy",
                                                       Category::RendererAdvanced,
                                                       Specialization::Default,
@@ -603,12 +603,10 @@ struct Values {
     SwitchableSetting<bool> use_video_framerate{linkage, false, "use_video_framerate",
                                                 Category::RendererAdvanced};
 
+    // Off: read traps protect only the pages that the GPU writes. On: each guest read of a cached
+    // page takes the slow path.
     SwitchableSetting<bool> use_reactive_flushing{linkage,
-#ifdef __ANDROID__
                                                   false,
-#else
-                                                  true,
-#endif
                                                   "use_reactive_flushing",
                                                   Category::RendererAdvanced};
 
@@ -649,13 +647,8 @@ struct Values {
                                                         Specialization::Default,
                                                         true,
                                                         true};
-    SwitchableSetting<bool> async_presentation{linkage,
-#ifdef __ANDROID__
-                                               true,
-#else
-                                               false,
-#endif
-                                               "async_presentation", Category::RendererHacks};
+    SwitchableSetting<bool> async_presentation{linkage, true, "async_presentation",
+                                               Category::RendererHacks};
 
     SwitchableSetting<bool> fix_bloom_effects{linkage, false, "fix_bloom_effects",
                                                      Category::RendererHacks};
