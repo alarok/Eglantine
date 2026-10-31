@@ -18,6 +18,9 @@ Only `play.ps1` and `matrix.py` start it.
 - `EDEN_NX2_DRAW_CENSUS=1` writes a census block to the log every 10 s (log channel `HW.GPU`).
   It also writes `Lost shader stores:` lines and one `Census image:` line for each image with no device memory.
   `EDEN_NX2_DRAW_CENSUS_SECONDS=<n>` changes the 10 s window. Use a short window to find a short event.
+- `EDEN_NX2_VDEC_DUMP=<dir>` writes each `nx2:vdecsvc` movie as an IVF file (input) and an NV12 file (output).
+  The log gets `changed while the game had it` if guest memory of a decoded image changes before the decoder uses it again.
+- `EDEN_NAN_OUTPUTS=magenta|zero|big` replaces NaN or infinite float color outputs. Use an empty shader cache.
 - The GUI reads these names from `nx2_switches.txt`. A variable in the real environment wins.
 - `matrix.py` removes every `EDEN_NX2_*` variable from the child environment.
   To pass one, set `MATRIX_EXTRA_ENV="NAME=value;NAME=value"`.
@@ -61,6 +64,9 @@ The first line of a capture holds the reason. Each next line is one pushbuffer e
   `python logdiff.py <run-a-log> <run-b-log>`
 - `session.ps1`: use it for a quick summary of one log: error counts, last frame times and GPU memory.
   `powershell -File session.ps1 -Log <eden_log.txt>`
+- `vdec_compare.py`: use it to check a `EDEN_NX2_VDEC_DUMP` folder. It compares the inputs with the `.webm` packets and the frames with FFmpeg output.
+  It saves the first different frame. A result of 0 different frames proves that the decoder is correct and the fault is after it.
+  `python vdec_compare.py <dump dir> [movie dir]`
 
 ## Shader cache tools
 

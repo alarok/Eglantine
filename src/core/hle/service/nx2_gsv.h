@@ -1755,6 +1755,7 @@ private:
             const auto data = ctx.ReadBufferA(0);
             input.data.assign(data.begin(), data.end());
         }
+        DumpInput(input);
         {
             std::scoped_lock lk{m_mutex};
             m_inputs.push_back(std::move(input));
@@ -1770,6 +1771,7 @@ private:
     // handed out keep their place, so the sync values stay in step with the client's ring.
     void Flush(HLERequestContext& ctx) {
         Log(ctx, ctx.GetCommand() == 8 ? "flush" : "stop");
+        CloseDumpFile(m_dump_input);
         {
             std::scoped_lock lk{m_mutex};
             m_inputs.clear();
@@ -1823,6 +1825,7 @@ private:
             if (m_flush) {
                 m_flush = false;
                 m_decoded.clear();
+                CloseDumpFile(m_dump_output);
                 if (decoder) {
                     lk.unlock();
                     decoder->Reset();
@@ -1934,6 +1937,7 @@ private:
         decoder->Render(*frame.picture, layout.format, width, height, layout.pitch,
                         layout.chroma_offset, bytes);
         DumpFrame(bytes, layout, width, height);
+        DumpOutput(image_id, address, bytes, layout, width, height, frame.end);
         auto& memory = system.ApplicationMemory();
         memory.WriteBlock(address, bytes.data(), layout.pitch * height);
         if (layout.format == Tegra::Host1x::Nx2PictureFormat::Nv12) {
@@ -1966,6 +1970,110 @@ private:
         }
     }
 
+    // EDEN_NX2_VDEC_DUMP=<dir> also keeps each stream in full, so that tools/nx2/debug/vdec_compare.py
+    // can test the input and the output with a reference decoder, without the game:
+    // nx2-vdec-<n>.ivf holds the compressed frames and nx2-vdec-<n>.nv12 the finished planes.
+    static const char* VideoDumpDirectory() {
+        static const char* const directory = std::getenv("EDEN_NX2_VDEC_DUMP");
+        return directory;
+    }
+
+    static void CloseDumpFile(std::FILE*& file) {
+        if (file != nullptr) {
+            std::fclose(file);
+            file = nullptr;
+        }
+    }
+
+    void DumpInput(const Input& input) {
+        const char* const directory = VideoDumpDirectory();
+        if (directory == nullptr) {
+            return;
+        }
+        if (m_dump_input == nullptr) {
+            static std::atomic<u32> count{};
+            const std::string path = fmt::format("{}/nx2-vdec-{:03}.ivf", directory, count++);
+            m_dump_input = std::fopen(path.c_str(), "wb");
+            if (m_dump_input == nullptr) {
+                return;
+            }
+            // IVF header: "DKIF", version 0, header size 32, "VP90", size, a time base of 1 us.
+            const std::array<u32, 8> header{0x46494B44U, 32U << 16,      0x30395056U,
+                                            m_width | (m_height << 16), 1000000U, 1U, 0U, 0U};
+            std::fwrite(header.data(), sizeof(u32), header.size(), m_dump_input);
+        }
+        const u32 size = static_cast<u32>(input.data.size());
+        std::fwrite(&size, sizeof(size), 1, m_dump_input);
+        std::fwrite(&input.pts, sizeof(input.pts), 1, m_dump_input);
+        std::fwrite(input.data.data(), 1, input.data.size(), m_dump_input);
+        std::fflush(m_dump_input);
+        if (input.end) {
+            CloseDumpFile(m_dump_input);
+        }
+    }
+
+    // Also reads the image back before the decoder writes it again. A difference means that
+    // something other than the decoder changed the image while the game had it.
+    void DumpOutput(u32 image_id, u64 address, const std::vector<u8>& bytes,
+                    const Nx2DecoderImageLayout& layout, u32 width, u32 height, bool end) {
+        const char* const directory = VideoDumpDirectory();
+        constexpr u64 MaxDumpBytes = 6ULL << 30;
+        static std::atomic<u64> dumped{};
+        if (directory == nullptr || layout.format != Tegra::Host1x::Nx2PictureFormat::Nv12) {
+            return;
+        }
+        auto& last = m_dump_last[image_id];
+        if (last.size() == bytes.size()) {
+            auto& scratch = m_dump_scratch;
+            scratch.resize(bytes.size());
+            auto& memory = system.ApplicationMemory();
+            const u64 chroma_rows = (height + 1) / 2;
+            memory.ReadBlockUnsafe(address, scratch.data(), layout.pitch * height);
+            memory.ReadBlockUnsafe(address + layout.chroma_offset,
+                                   scratch.data() + layout.chroma_offset,
+                                   layout.pitch * chroma_rows);
+            u64 different{};
+            u64 first{};
+            const auto compare = [&](u64 begin, u64 count) {
+                for (u64 i = begin; i < begin + count; ++i) {
+                    if (scratch[i] != last[i] && different++ == 0) {
+                        first = i;
+                    }
+                }
+            };
+            compare(0, layout.pitch * height);
+            compare(layout.chroma_offset, layout.pitch * chroma_rows);
+            if (different != 0) {
+                LOG_WARNING(Service, "{} image {} changed while the game had it: {} bytes, first at {:#x}",
+                            GetServiceName(), image_id, different, first);
+            }
+        }
+        last = bytes;
+        if (dumped.load(std::memory_order_relaxed) >= MaxDumpBytes) {
+            return;
+        }
+        if (m_dump_output == nullptr) {
+            static std::atomic<u32> count{};
+            const std::string path = fmt::format("{}/nx2-vdec-{:03}.nv12", directory, count++);
+            m_dump_output = std::fopen(path.c_str(), "wb");
+            if (m_dump_output == nullptr) {
+                return;
+            }
+        }
+        for (u32 y = 0; y < height; ++y) {
+            std::fwrite(bytes.data() + y * layout.pitch, 1, width, m_dump_output);
+        }
+        for (u32 y = 0; y < (height + 1) / 2; ++y) {
+            std::fwrite(bytes.data() + layout.chroma_offset + y * layout.pitch, 1, width,
+                        m_dump_output);
+        }
+        std::fflush(m_dump_output);
+        dumped.fetch_add(u64{width} * height * 3 / 2, std::memory_order_relaxed);
+        if (end) {
+            CloseDumpFile(m_dump_output);
+        }
+    }
+
     struct ReadyState {
         std::mutex mutex;
         Kernel::KEvent* event{};
@@ -1978,6 +2086,10 @@ private:
     std::shared_ptr<ReadyState> m_ready = std::make_shared<ReadyState>();
     std::shared_ptr<Core::Timing::EventType> m_ready_timer;
     u64 m_submitted{};
+    std::FILE* m_dump_input{};  ///< EDEN_NX2_VDEC_DUMP, service thread
+    std::FILE* m_dump_output{}; ///< EDEN_NX2_VDEC_DUMP, decode thread
+    std::map<u32, std::vector<u8>> m_dump_last; ///< Decode thread: last planes of each image
+    std::vector<u8> m_dump_scratch;
     u32 m_syncpoint{NoSyncpoint}; ///< Counts finished frames (allocated at the first register)
     u32 m_sync_base{};            ///< Its value before the first frame
 
