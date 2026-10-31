@@ -25,6 +25,7 @@
 
 #include "common/alignment.h"
 #include "common/div_ceil.h"
+#include "common/nx2_ab.h"
 #include "common/settings.h"
 #include "common/thread.h"
 #include "core/core.h"
@@ -1054,6 +1055,18 @@ private:
                 m_stats.frame_us += frame;
                 m_stats.max_frame_us = (std::max)(m_stats.max_frame_us, frame);
                 m_stats.hitches += frame > 100'000 ? 1 : 0;
+                if (Common::Nx2Ab::Enabled()) {
+                    const size_t side = Common::Nx2Ab::UseB() ? 1 : 0;
+                    m_ab_frames[side] += 1;
+                    m_ab_us[side] += frame;
+                    if (m_ab_frames[0] + m_ab_frames[1] >= 600 && m_ab_frames[0] != 0 && m_ab_frames[1] != 0) {
+                        LOG_INFO(Service, "nx2 A/B: A {} frames {} us, B {} frames {} us", m_ab_frames[0],
+                                 m_ab_us[0] / m_ab_frames[0], m_ab_frames[1],
+                                 m_ab_us[1] / m_ab_frames[1]);
+                        m_ab_frames = {};
+                        m_ab_us = {};
+                    }
+                }
             }
             m_stats.last_present = entered;
             if (++m_stats.presents == 600) {
@@ -1078,6 +1091,8 @@ private:
     // Eden's GPU thread has processed the frame. Otherwise the game laps the GPU thread and
     // rewrites command memory it hasn't read yet.
     u32 m_wait_timeouts{};
+    std::array<long long, 2> m_ab_frames{};
+    std::array<long long, 2> m_ab_us{};
     struct PresentStats {
         long long frame_us{}, fence_us{}, composite_us{}, pace_us{}, max_fence_us{};
         long long max_frame_us{}, hitches{};

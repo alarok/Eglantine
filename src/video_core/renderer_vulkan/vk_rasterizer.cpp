@@ -22,6 +22,7 @@
 #include "common/assert.h"
 #include "shader_recompiler/exception.h"
 #include "common/logging.h"
+#include "common/nx2_ab.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "video_core/buffer_cache/buffer_cache.h"
@@ -1427,7 +1428,11 @@ void RasterizerVulkan::FlushWork() {
     if ((++draw_counter & CHECK_MASK) != CHECK_MASK) {
         return;
     }
-    if (draw_counter < DRAWS_TO_DISPATCH) {
+    static const u32 draws_to_flush = [] {
+        const char* value = std::getenv("EDEN_NX2_FLUSH_DRAWS");
+        return value != nullptr ? static_cast<u32>(std::strtoul(value, nullptr, 10)) : DRAWS_TO_DISPATCH;
+    }();
+    if (draw_counter < (Common::Nx2Ab::On("flush") ? draws_to_flush : DRAWS_TO_DISPATCH)) {
         scheduler.DispatchWork();
         return;
     }
