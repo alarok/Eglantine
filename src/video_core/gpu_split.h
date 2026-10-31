@@ -12,6 +12,7 @@
 #include <unordered_map>
 
 #include "common/common_types.h"
+#include "video_core/nx2_profile.h"
 
 namespace Core {
 class System;
@@ -98,8 +99,8 @@ public:
 
     /// Makes what was sent visible to the back.
     void Publish();
-    /// Waits until the back executed everything sent so far.
-    void Drain();
+    /// Waits until the back executed everything sent so far. `site` is for the profile only.
+    void Drain(Nx2Profile::DrainSite site = Nx2Profile::DrainSite::Other);
     /// The front sent work that can write guest memory for command lists (a dispatch or a copy).
     void NoteQueuedWrites() {
         queued_writes = true;

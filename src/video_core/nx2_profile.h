@@ -82,7 +82,9 @@ inline u64 Now() {
 struct ThreadData {
     std::array<u64, static_cast<size_t>(Zone::Count)> exclusive_ns{};
     std::array<u64, static_cast<size_t>(Zone::Count)> count{};
-    std::array<u64, 17> counters{}; ///< See Counter
+    std::array<u64, 18> counters{}; ///< See Counter
+    std::array<u64, 7> drain_ns{};    ///< See DrainSite
+    std::array<u64, 7> drain_count{}; ///< See DrainSite
     u64 child_ns{};    ///< Time of the zones nested in the current one
     u64 window_start{};
 };
@@ -141,6 +143,23 @@ enum class Counter : u32 {
     ReadbackWaits,    ///< Host GPU waits for a read back of buffer memory
     ReadbackBytes,    ///< Bytes these read backs copied
     StaleWindowWords, ///< Macro parameters read without a wait, but dirty on the back (must stay 0)
+    ReadbackNs,       ///< Time in these waits
+};
+
+/// Why the split's front waits for the back. See GpuSplit::Drain.
+enum class DrainSite : u32 {
+    Other,
+    MacroParameters, ///< Parameters of a macro on pages the GPU wrote
+    CommandWords,    ///< Command list words on pages the GPU wrote
+    FirstWrite,      ///< First look at a page that queued work can write
+    DmaRead,         ///< The native MME reads guest memory
+    Acquire,         ///< A semaphore acquire
+    Fence,           ///< A fence that the guest asked for
+    Count,
+};
+
+inline constexpr std::array<const char*, static_cast<size_t>(DrainSite::Count)> drain_site_names{
+    "other", "macro parameters", "command words", "first write", "MME DMA read", "acquire", "fence",
 };
 
 /// Which engine last released each semaphore address (filled only while profiling).
@@ -172,6 +191,12 @@ inline void Add(Counter counter, u64 amount) {
     if (Enabled()) {
         t_data.counters[static_cast<size_t>(counter)] += amount;
     }
+}
+
+inline void AddDrain(DrainSite site, u64 ns) {
+    const auto index = static_cast<size_t>(site);
+    t_data.drain_ns[index] += ns;
+    ++t_data.drain_count[index];
 }
 
 /// Called by the GPU thread (and the split's back thread) between commands: logs and resets
@@ -226,9 +251,16 @@ inline void Report(const char* thread_name = "GPU thread") {
                         rate(Counter::AcquireDrains), rate(Counter::AcquireDrainsMet),
                         rate(Counter::AcquireByPuller), rate(Counter::AcquireBy3D),
                         rate(Counter::AcquireByCompute), rate(Counter::AcquireByDma));
-    line += fmt::format(" | read back waits {:.1f} ({:.0f} KiB) | stale window words {:.1f}",
+    line += fmt::format(" | read back waits {:.1f} ({:.0f} KiB, {:.1f} ms) | stale window words {:.1f}",
                         rate(Counter::ReadbackWaits), rate(Counter::ReadbackBytes) / 1024.0,
-                        rate(Counter::StaleWindowWords));
+                        rate(Counter::ReadbackNs) / 1e6, rate(Counter::StaleWindowWords));
+    for (size_t i = 0; i < data.drain_count.size(); ++i) {
+        if (data.drain_count[i] != 0) {
+            line += fmt::format(" | drains for {} {:.0f}/s {:.1f} ms", drain_site_names[i],
+                                static_cast<double>(data.drain_count[i]) * 1e9 / window,
+                                static_cast<double>(data.drain_ns[i]) * 1000.0 / window);
+        }
+    }
     LOG_INFO(HW_GPU, "{} per second:{}", thread_name, line);
     data = {};
     data.window_start = now;

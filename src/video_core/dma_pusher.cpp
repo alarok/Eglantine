@@ -136,7 +136,7 @@ bool DmaPusher::Step() {
                 const bool in_current_window = on_written_pages && InCurrentWindow(address, bytes);
                 if (on_written_pages && !in_current_window) {
                     if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
-                        split.Drain();
+                        split.Drain(VideoCommon::Nx2Profile::DrainSite::MacroParameters);
                     }
                     if (FlushGpuWrittenWindow(address, bytes)) {
                         flushed_parameters = true;
@@ -250,7 +250,7 @@ bool DmaPusher::Step() {
     }
 
     if (signal_sync) {
-        VideoCommon::GpuSplit::Get().Drain();
+        VideoCommon::GpuSplit::Get().Drain(VideoCommon::Nx2Profile::DrainSite::Fence);
         rasterizer->SignalFence([this]() {
             std::scoped_lock lk(sync_mutex);
             synced = true;
@@ -530,7 +530,7 @@ bool DmaPusher::OnGpuWrittenPages(GPUVAddr address, size_t size) {
     if (!new_first && !new_last) {
         return false;
     }
-    split.Drain();
+    split.Drain(VideoCommon::Nx2Profile::DrainSite::FirstWrite);
     return any_written();
 }
 
@@ -599,7 +599,7 @@ void DmaPusher::FlushGpuWrittenCommands(GPUVAddr address, size_t size) {
     }
     // The caches belong to the split's back: it first runs what the front queued (the dispatch
     // that writes these words among it).
-    VideoCommon::GpuSplit::Get().Drain();
+    VideoCommon::GpuSplit::Get().Drain(VideoCommon::Nx2Profile::DrainSite::CommandWords);
     FlushGpuWrittenWindow(address, size);
 }
 

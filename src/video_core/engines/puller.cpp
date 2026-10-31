@@ -56,7 +56,7 @@ void OnBack(const Func& func) {
 }
 
 void DrainBack() {
-    VideoCommon::GpuSplit::Get().Drain();
+    VideoCommon::GpuSplit::Get().Drain(VideoCommon::Nx2Profile::DrainSite::Acquire);
 }
 
 void NoteQueuedRelease(DmaPusher& dma_pusher, GPUVAddr address, u32 payload) {
