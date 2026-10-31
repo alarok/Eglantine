@@ -7,13 +7,6 @@ on:
         description: Publish the binaries as a GitHub release
         type: boolean
         default: true
-  push:
-    branches:
-      - nx2
-      - nx2-experimental
-  pull_request:
-    branches:
-      - nx2
 
 permissions:
   contents: read

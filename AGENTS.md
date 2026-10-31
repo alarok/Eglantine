@@ -64,16 +64,10 @@ Use body files for multiline GitHub text. Disclose AI assistance in commits and 
 
 Fetch upstream immediately before comparing changes.
 Inspect merged PRs and actual diffs before porting an upstream change.
-Use the `Sync upstream` workflow for scheduled updates.
-It merges fork and upstream histories on `automation/sync-upstream-nx2`.
-A conflict stops the workflow before it changes remote branches or PRs.
-The bot dispatches full Windows and Linux builds before automatic integration.
-Keep the `Required validation` check mandatory and require current checks on `nx2`.
-
-Documentation and CI-only PRs run workflow lint and CI behavior tests.
-Emulator, build, dependency, and unknown changes require both platform builds.
-Skipped platform builds must remain visible as skipped checks.
-Manual build dispatches and pushes run both platform builds.
+The `Sync upstream` workflow and the `nx2` ruleset are disabled for now, at Deku's request.
+Update `nx2` with GitHub's Sync fork action or a local merge. Direct pushes to `nx2` are allowed.
+Platform builds run only from a manual `release-binaries` dispatch.
+A full build takes about 45 minutes, so do not make other work wait for one.
 Build success does not prove game compatibility or increased FPS.
 See `tools/nx2/upstream_sync.md` for workflow behavior and release triggers.
 
@@ -87,7 +81,8 @@ Compare the same scene and settings before claiming a performance gain.
 Preserve draw coverage and report rejected work, crashes, and visual regressions.
 Inspect native presented frames before claiming a visual fix.
 An API acknowledgement proves host input application, not a game's response.
-Do not add success stubs for unknown guest commands without a verified contract.
+Mark a success stub for an unknown guest command as a stub in the code and in the log.
+Do not copy a real `qt-config.ini` to a test profile. It holds absolute data directories, so the test opens the real saves.
 Keep games, keys, firmware, saves, caches, dumps, and large logs outside Git.
 Use relevant viewport screenshots when they show the changed behavior.
 
@@ -97,5 +92,6 @@ Upstream `build-55` targets `d26ed5de848d963ef62165cc3c387c48f35825e0`.
 It includes `a4a746b47b`, which accepts R0 shader returns for Mario Kart World text.
 Do not create a duplicate fix for that change.
 Compare a clean upstream GUI build before attributing another rendering fault to this fork.
-The isolated candidate still has captures with missing labels; do not report complete text validation from the upstream commit alone.
+Mario Kart World shows no text in a session that starts without a game save, on every tested build and setting.
+Text appears from the next boot. The cause is still open. Boot twice, or seed a save, before you compare text.
 Release: https://github.com/Djihads80/Eglantine/releases/tag/build-55

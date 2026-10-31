@@ -1,5 +1,10 @@
 # Upstream sync
 
+The workflow and the `nx2` ruleset are disabled for now. Platform builds are manual.
+Update `nx2` with GitHub's Sync fork action or a local merge. This guide applies
+again if the workflow and the ruleset return, and the workflow then needs
+`release-binaries.yml` to run on pull requests again.
+
 The `Sync upstream` workflow checks `Djihads80/Eglantine` `nx2` every 6 hours.
 You can also start it from the Actions page.
 A forked repository does not update itself. A check with no upstream changes takes less than a minute.
