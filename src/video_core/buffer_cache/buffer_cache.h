@@ -228,8 +228,15 @@ std::optional<VideoCore::RasterizerDownloadArea> BufferCache<P>::GetFlushArea(DA
 
 template <class P>
 void BufferCache<P>::DownloadMemory(DAddr device_addr, u64 size) {
+    // Give each buffer only its own part of the range. DownloadBufferMemory clears the whole range
+    // that it receives and reads all of it from the one buffer.
+    const DAddr range_end = device_addr + size;
     ForEachBufferInRange(device_addr, size, [&](BufferId, Buffer& buffer) {
-        DownloadBufferMemory(buffer, device_addr, size);
+        const DAddr begin = (std::max)(device_addr, DAddr{buffer.CpuAddr()});
+        const DAddr end = (std::min)(range_end, DAddr{buffer.CpuAddr() + buffer.SizeBytes()});
+        if (begin < end) {
+            DownloadBufferMemory(buffer, begin, end - begin);
+        }
     });
 }
 
