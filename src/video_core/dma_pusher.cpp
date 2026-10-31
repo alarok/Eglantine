@@ -130,12 +130,12 @@ bool DmaPusher::Step() {
                     return value == nullptr || value[0] != '0';
                 }();
                 bool flushed_parameters = false;
-                if (flush_parameters && words <= 64) {
+                const GPUVAddr address = dma_state.dma_get;
+                const size_t bytes = words * sizeof(u32);
+                if (flush_parameters && words <= 64 && OnGpuWrittenPages(address, bytes)) {
                     if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
                         split.Drain();
                     }
-                    const GPUVAddr address = dma_state.dma_get;
-                    const size_t bytes = words * sizeof(u32);
                     if (memory_manager.IsMemoryDirty(address, bytes, VideoCommon::CacheType::BufferCache)) {
                         memory_manager.FlushRegion(address, bytes, VideoCommon::CacheType::BufferCache);
                         flushed_parameters = true;
@@ -413,6 +413,9 @@ void DmaPusher::CallMethod(u32 argument) {
             return;
         }
         if (split.Active()) {
+            if (subchannel_type[dma_state.subchannel] != Engines::EngineTypes::Maxwell3D) {
+                split.NoteQueuedWrites();
+            }
             const GPUVAddr segment = dma_state.dma_get + dma_state.dma_word_offset;
             if (split.FrontMacros()) {
                 const auto type = subchannel_type[dma_state.subchannel];
@@ -463,6 +466,9 @@ void DmaPusher::CallMultiMethod(const u32* base_start, u32 num_methods) {
             return;
         }
         if (split.Active()) {
+            if (subchannel_type[dma_state.subchannel] != Engines::EngineTypes::Maxwell3D) {
+                split.NoteQueuedWrites();
+            }
             const GPUVAddr segment = dma_state.dma_get + dma_state.dma_word_offset;
             if (split.FrontMacros()) {
                 const auto type = subchannel_type[dma_state.subchannel];
@@ -494,15 +500,25 @@ void DmaPusher::CallMultiMethod(const u32* base_start, u32 num_methods) {
 }
 
 bool DmaPusher::OnGpuWrittenPages(GPUVAddr address, size_t size) {
-    // Pending dispatches must mark their written pages before this lookup.
-    if (VideoCommon::GpuSplit::Get().Active()) {
-        VideoCommon::GpuSplit::Get().Drain();
-    }
-    for (GPUVAddr page = address & ~GPUVAddr{0xfff}; page < address + size; page += 0x1000) {
-        if (const auto device = memory_manager.GpuToCpuAddress(page);
-            device && Tegra::Nx2IsGpuWritten(*device)) {
-            return true;
+    const auto any_written = [&] {
+        for (GPUVAddr page = address & ~GPUVAddr{0xfff}; page < address + size; page += 0x1000) {
+            if (const auto device = memory_manager.GpuToCpuAddress(page);
+                device && Tegra::Nx2IsGpuWritten(*device)) {
+                return true;
+            }
         }
+        return false;
+    };
+    if (any_written()) {
+        return true;
+    }
+    // A dispatch or a copy that is still queued on the split's back can be the first to write these
+    // pages. Do not wait in other cases: this runs for each entry, and a wait for each one takes
+    // away the gain of the split.
+    auto& split = VideoCommon::GpuSplit::Get();
+    if (split.Active() && split.HasQueuedWrites()) {
+        split.Drain();
+        return any_written();
     }
     return false;
 }
@@ -534,6 +550,9 @@ void DmaPusher::FlushGpuWrittenCommands(GPUVAddr address, size_t size) {
     if (!OnGpuWrittenPages(address, size)) {
         return;
     }
+    // The caches belong to the split's back: it first runs what the front queued (the dispatch
+    // that writes these words among it).
+    VideoCommon::GpuSplit::Get().Drain();
     if (memory_manager.IsMemoryDirty(address, size, VideoCommon::CacheType::BufferCache)) {
         memory_manager.FlushRegion(address, size, VideoCommon::CacheType::BufferCache);
     }

@@ -197,6 +197,7 @@ void GpuSplit::Publish() {
 }
 
 void GpuSplit::Drain() {
+    queued_writes = false;
     consumed_cache = consumed.load(std::memory_order_acquire);
     if (consumed_cache == write_position) {
         return;

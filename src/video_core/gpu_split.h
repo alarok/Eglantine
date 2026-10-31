@@ -99,6 +99,14 @@ public:
     void Publish();
     /// Waits until the back executed everything sent so far.
     void Drain();
+    /// The front sent work that can write guest memory for command lists (a dispatch or a copy).
+    void NoteQueuedWrites() {
+        queued_writes = true;
+    }
+    /// Such work was sent after the last drain.
+    [[nodiscard]] bool HasQueuedWrites() const {
+        return queued_writes;
+    }
 
 private:
     enum class Kind : u64 {
@@ -160,6 +168,7 @@ private:
     u64 consumed_cache{};
     /// Words between publishes: small right after a drain, while the back has nothing to do.
     size_t publish_every{PublishEvery};
+    bool queued_writes{};
     Tegra::Engines::EngineInterface* front_engine{};
 
     // Back side.
