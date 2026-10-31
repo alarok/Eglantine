@@ -169,6 +169,10 @@ struct WordManager {
             if (type == Type::GPU)
                 mask &= ~untracked_words[index];
             const u64 word = state_words[index] & mask;
+            // Most bound ranges are clean. Each step below does nothing for these words.
+            if (type == Type::CPU && ((state_words[index] | untracked_words[index]) & mask) == 0) {
+                return;
+            }
             if (clear) {
                 if (type == Type::CPU || type == Type::CachedCPU) {
                     CollectChangedRanges(true, index, untracked_words[index], mask, ranges);
