@@ -241,6 +241,7 @@ Traps on the console:
 - Upstream PR #112 removes the standalone frame generation control in this fork. The dialog probe fails after that change. See `D:/DEV/egl-compare/pr112-probe/README.md`.
 - Upstream PR #213 needs more work before integration. Its sparse range helper accepts overflowing ranges. The local candidate fixes that case, but GPU writes, eviction, metadata, and allocation failure remain unverified. See `D:/DEV/egl-compare/pr213-probe/README.md`.
 - The SURED candidate passes an R32_UINT atomic probe. Its `STRONG.GPU` memory ordering is not verified. See `D:/DEV/egl-compare/sured-shader-probe/README.md`.
+- Native MME query reads have Vulkan coverage for 32-bit reports. Reads from the middle of a 64-bit report and OpenGL query reads remain untested.
 - Native `WARPSYNC` currently lowers to a no-op. Its memory-order and divergent-lane behavior need a shader test before this can be treated as correct.
 - Upstream PR #173 drops `ISBEWR` writes and maps `ISBERD` modes beyond the existing map-read case. Do not assume those writes are harmless or that the mapped modes preserve their semantics.
 - Queued input and output sessions close with the Null sink after its capture buffer fix. SDL/WASAPI output also closes with queued buffers. Real input remains untested. The local probe is `D:/DEV/egl-compare/audio-queued-close-probe`.
