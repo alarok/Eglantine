@@ -1081,6 +1081,20 @@ bool Device::GetSuitability(bool requires_swapchain) {
     FOR_EACH_VK_FEATURE_EXT(FEATURE_EXTENSION);
     FOR_EACH_VK_EXTENSION(EXTENSION);
 
+    // Quad control requires maximal reconvergence and the Vulkan memory model.
+    if (extensions.shader_quad_control) {
+        const bool has_reconvergence =
+            supported_extensions.contains(VK_KHR_SHADER_MAXIMAL_RECONVERGENCE_EXTENSION_NAME);
+        const bool has_memory_model = instance_version >= VK_API_VERSION_1_2 ||
+            loaded_extensions.contains(VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME);
+        if (has_reconvergence && has_memory_model) {
+            loaded_extensions.insert(VK_KHR_SHADER_MAXIMAL_RECONVERGENCE_EXTENSION_NAME);
+        } else {
+            LOG_INFO(Render_Vulkan, "Disabling shader quad control: a required extension is missing");
+            RemoveExtension(extensions.shader_quad_control, VK_KHR_SHADER_QUAD_CONTROL_EXTENSION_NAME);
+        }
+    }
+
     extensions.depth_stencil_resolve =
         extensions.depth_stencil_resolve &&
         (instance_version >= VK_API_VERSION_1_2 || extensions.create_renderpass2);
@@ -1528,6 +1542,9 @@ void Device::RemoveUnsuitableExtensions() {
     extensions.shader_quad_control = features.shader_quad_control.shaderQuadControl;
     RemoveExtensionFeatureIfUnsuitable(extensions.shader_quad_control, features.shader_quad_control,
                                        VK_KHR_SHADER_QUAD_CONTROL_EXTENSION_NAME);
+    if (!extensions.shader_quad_control) {
+        loaded_extensions.erase(VK_KHR_SHADER_MAXIMAL_RECONVERGENCE_EXTENSION_NAME);
+    }
 
     // VK_KHR_workgroup_memory_explicit_layout
     extensions.workgroup_memory_explicit_layout =
