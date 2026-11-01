@@ -24,8 +24,8 @@ public:
         : SinkStream{system_, type_} {}
     ~NullSinkStreamImpl() override {}
     void AppendBuffer(SinkBuffer&, std::span<s16>) override {}
-    std::vector<s16> ReleaseBuffer(u64) override {
-        return {};
+    std::vector<s16> ReleaseBuffer(u64 num_samples) override {
+        return std::vector<s16>(num_samples);
     }
 };
 

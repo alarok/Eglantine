@@ -240,7 +240,7 @@ Traps on the console:
 
 - Native `WARPSYNC` currently lowers to a no-op. Its memory-order and divergent-lane behavior need a shader test before this can be treated as correct.
 - Upstream PR #173 drops `ISBEWR` writes and maps `ISBERD` modes beyond the existing map-read case. Do not assume those writes are harmless or that the mapped modes preserve their semantics.
-- Started input and output sessions stop before their events close. The Null sink probe has no queued buffers. Test queued buffers and a real audio backend.
+- Queued input and output sessions close with the Null sink after its capture buffer fix. SDL/WASAPI output also closes with queued buffers. Real input remains untested. The local probe is `D:/DEV/egl-compare/audio-queued-close-probe`.
 - The Vulkan `DrawTexture` path for non-2D sources still uses the old raw blit. Integer and multisampled sources and source/destination feedback need tests. The 2D probe does not run a game.
 - Mario Kart build 32 logged a lost first GPU write to an `UnwrittenSparse` depth array and an `UNIMPLEMENTED` assertion. The run continued. Promoting the image during render-target lookup can invalidate sampled views that the pipeline already collected. Test an array view and a render-target layer used in the same draw before changing that order.
 - Do not route depth images to `SparseLayers` without handling initialization, metadata, mip tails and GPU-written data at eviction. `IsDownloadable` currently excludes unbacked images. The D16 layer probe does not test those paths.
