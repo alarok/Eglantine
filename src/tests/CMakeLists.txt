@@ -29,6 +29,7 @@ add_executable(tests
     core/loader/loose_dump_sidecars.cpp
     core/system_initialization.cpp
     video_core/memory_tracker.cpp
+    video_core/packed_draw.cpp
     video_core/ampere_returns.cpp
     video_core/ampere_translator.cpp
     video_core/pipeline_disk_cache.cpp
