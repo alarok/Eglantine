@@ -752,8 +752,15 @@ void RasterizerVulkan::DrawTexture() {
                                     .y = ScaleSrc(draw_texture_state.src_y1)}};
     Extent3D src_size = {static_cast<u32>(ScaleSrc(texture.size.width)),
                          static_cast<u32>(ScaleSrc(texture.size.height)), texture.size.depth};
-    blit_image.BlitColor(framebuffer, texture.RenderTarget(), texture.ImageHandle(),
-                         sampler->Handle(), dst_region, src_region, src_size);
+    if (texture.type == VideoCommon::ImageViewType::e2D ||
+        texture.type == VideoCommon::ImageViewType::e2DArray ||
+        texture.type == VideoCommon::ImageViewType::Rect) {
+        blit_image.BlitColor(framebuffer, texture, sampler->Handle(), dst_region, src_region,
+                             src_size);
+    } else {
+        blit_image.BlitColor(framebuffer, texture.RenderTarget(), texture.ImageHandle(),
+                             sampler->Handle(), dst_region, src_region, src_size);
+    }
 }
 
 void RasterizerVulkan::Clear(u32 layer_count) {

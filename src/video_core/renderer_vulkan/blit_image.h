@@ -82,6 +82,10 @@ public:
                    VkImage src_image, VkSampler src_sampler, const Region2D& dst_region,
                    const Region2D& src_region, const Extent3D& src_size);
 
+    void BlitColor(const Framebuffer* dst_framebuffer, const ImageView& src_image_view,
+                   VkSampler src_sampler, const Region2D& dst_region,
+                   const Region2D& src_region, const Extent3D& src_size);
+
     void BlitColorMSAA(const Framebuffer* dst_framebuffer, const ImageView& src_image_view,
                        const Region2D& dst_region, const Region2D& src_region);
 
@@ -154,7 +158,8 @@ private:
     void BlitImpl(const Framebuffer* dst_framebuffer, const ImageView& src_image_view,
                   const Region2D& dst_region, const Region2D& src_region, VkPipeline pipeline,
                   VkSampler sampler, VkImageView src_view, VkImageView src_stencil_view,
-                  bool blit_stencil);
+                  bool blit_stencil, const Extent3D& src_size = {1, 1, 1},
+                  bool single_layer = false);
 
     void CopyMSAAImpl(VkRenderPass renderpass, VkPipeline pipeline, VkPipelineLayout layout,
                       VkImage dst_image, VkFormat dst_vk_format, VkImage src_image,
