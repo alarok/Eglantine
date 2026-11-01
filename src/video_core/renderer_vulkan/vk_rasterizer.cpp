@@ -714,6 +714,7 @@ void RasterizerVulkan::DrawTexture() {
         gpu.TickWork();
     };
     FlushWork();
+    gpu_memory->FlushCaching();
 
     std::scoped_lock l{texture_cache.mutex};
     texture_cache.SynchronizeDescriptors(false);
