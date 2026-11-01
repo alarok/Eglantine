@@ -76,6 +76,17 @@ namespace Common {
 [[maybe_unused]] constexpr size_t PageAlignment = 0x1000;
 [[maybe_unused]] constexpr size_t HugePageSize = 0x200000;
 
+// The host page is not always the guest page: Apple Silicon uses 16 KB pages while the guest uses
+// 4 KB. Mappings and protections work on host pages, so the arena stages whole host granules and
+// leaves a granule unstaged when one guest mapping covers only part of it.
+[[maybe_unused]] static size_t HostPageSize() {
+    static const size_t size = [] {
+        const long value = sysconf(_SC_PAGESIZE);
+        return value > 0 ? static_cast<size_t>(value) : PageAlignment;
+    }();
+    return size;
+}
+
 #ifdef _WIN32
 
 // Manually imported for MinGW compatibility
@@ -414,41 +425,10 @@ private:
 #ifdef ARCHITECTURE_arm64
 
 static void* ChooseVirtualBase(size_t virtual_size) {
-    constexpr uintptr_t Map39BitSize = (1ULL << 39);
-    constexpr uintptr_t Map36BitSize = (1ULL << 36);
-
-    // This is not a cryptographic application, we just want something random.
-    std::mt19937_64 rng;
-
-    // We want to ensure we are allocating at an address aligned to the L2 block size.
-    // For Qualcomm devices, we must also allocate memory above 36 bits.
-    const size_t lower = Map36BitSize / HugePageSize;
-    const size_t upper = (Map39BitSize - virtual_size) / HugePageSize;
-    const size_t range = upper - lower;
-
-    // Try up to 64 times to allocate memory at random addresses in the range.
-    for (int i = 0; i < 64; i++) {
-        // Calculate a possible location.
-        uintptr_t hint_address = ((rng() % range) + lower) * HugePageSize;
-
-        // Try to map.
-        // Note: we may be able to take advantage of MAP_FIXED_NOREPLACE here.
-        void* map_pointer =
-            mmap(reinterpret_cast<void*>(hint_address), virtual_size, PROT_READ | PROT_WRITE,
-                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_NOCORE, -1, 0);
-
-        // If we successfully mapped, we're done.
-        if (reinterpret_cast<uintptr_t>(map_pointer) == hint_address) {
-            return map_pointer;
-        }
-
-        // Unmap if necessary, and try again.
-        if (map_pointer != MAP_FAILED) {
-            munmap(map_pointer, virtual_size);
-        }
-    }
-
-    return MAP_FAILED;
+    // macOS does not honour an address hint, so ask for an arena and take the address that comes
+    // back. It is host-page aligned, which is all the granule mappings need.
+    return mmap(nullptr, virtual_size, PROT_NONE,
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_NOCORE, -1, 0);
 }
 
 #else
@@ -519,8 +499,8 @@ public:
     {}
 
     bool Init() {
-        long page_size = sysconf(_SC_PAGESIZE);
-        ASSERT_MSG(page_size == 0x1000, "page size {:#x} is incompatible with 4K paging", page_size);
+        // The host page size is read where the arena is mapped. A 16 KB host page cannot express
+        // the 4 KB guest page, so the mappings are staged by host granule.
         // Backing memory initialization
 #if defined(__sun__) || defined(__HAIKU__) || defined(__NetBSD__) || defined(__DragonFly__)
         fd = shm_open_anon(O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
@@ -591,9 +571,39 @@ public:
         return ptr;
     }
 
+    // Leaves a range of whole host granules reserved and inaccessible, so a fastmem access inside
+    // it faults and the runtime recomputes that access from the page table. The page table keeps
+    // pointing at the backing buffer, so the recomputed access is correct and not slower than the
+    // fallback build.
+    void ReserveGranules(size_t virtual_offset, size_t length) {
+        const size_t granule = HostPageSize();
+        const size_t start = virtual_offset & ~(granule - 1);
+        const size_t end = (virtual_offset + length + granule - 1) & ~(granule - 1);
+        if (end <= start) {
+            return;
+        }
+        free_manager.AllocateBlock(virtual_base + start, end - start);
+        void* ret = mmap(virtual_base + start, end - start, PROT_NONE,
+                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+        ASSERT_MSG(ret != MAP_FAILED, "mmap reserve: {}", strerror(errno));
+    }
+
     void Map(size_t virtual_offset, size_t host_offset, size_t length, MemoryPermission perms) {
         // Intersect the range with our address space.
         AdjustMap(&virtual_offset, &length);
+        if (length == 0) {
+            return;
+        }
+
+        // Four guest pages share one host granule. Stage the range only when this mapping covers
+        // whole granules in both the guest range and the backing, otherwise leave them to the
+        // fault path.
+        const size_t granule = HostPageSize();
+        if ((virtual_offset % granule) != 0 || (host_offset % granule) != 0 ||
+            (length % granule) != 0) {
+            ReserveGranules(virtual_offset, length);
+            return;
+        }
 
         // We are removing a placeholder.
         free_manager.AllocateBlock(virtual_base + virtual_offset, length);
@@ -619,18 +629,29 @@ public:
 
         // Intersect the range with our address space.
         AdjustMap(&virtual_offset, &length);
+        if (length == 0) {
+            return;
+        }
 
-        // Merge with any adjacent placeholder mappings.
-        auto [merged_pointer, merged_size] =
-            free_manager.FreeBlock(virtual_base + virtual_offset, length);
-
-        void* ret = mmap(merged_pointer, merged_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-        ASSERT_MSG(ret != MAP_FAILED, "mmap: {}", strerror(errno));
+        // Free what was staged, then reserve the whole granules that the range touches.
+        free_manager.FreeBlock(virtual_base + virtual_offset, length);
+        ReserveGranules(virtual_offset, length);
     }
 
     void Protect(size_t virtual_offset, size_t length, bool read, bool write, bool execute) {
         // Intersect the range with our address space.
         AdjustMap(&virtual_offset, &length);
+        if (length == 0) {
+            return;
+        }
+
+        // A permission change on part of a granule cannot be expressed without changing its
+        // neighbours, so drop the staging and let the fault path serve these pages.
+        const size_t granule = HostPageSize();
+        if ((virtual_offset % granule) != 0 || (length % granule) != 0) {
+            ReserveGranules(virtual_offset, length);
+            return;
+        }
 
         int flags = PROT_NONE;
         if (read) {
