@@ -849,7 +849,7 @@ void Device::LoadStaticPipelineCache() {
         }
         data.resize(total - magic.size() - sizeof(version));
         file.read(data.data(), static_cast<std::streamsize>(data.size()));
-    } catch (const std::ios_base::failure& e) {
+    } catch (const std::ios_base::failure&) {
         create(0, nullptr);
         return;
     }
@@ -882,7 +882,7 @@ void Device::SaveStaticPipelineCache() const {
             .write(reinterpret_cast<const char*>(&STATIC_CACHE_VERSION),
                    sizeof(STATIC_CACHE_VERSION))
             .write(data.data(), static_cast<std::streamsize>(size));
-    } catch (const std::ios_base::failure& e) {
+    } catch (const std::ios_base::failure&) {
         Common::FS::RemoveFile(filename);
     }
 }
