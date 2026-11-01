@@ -178,6 +178,7 @@ Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. P
 | `matrix.py` | Defines the variants. `owner-cold` is Deku's settings with an empty cache, `seed-acc0` is Fast, `seed` is Accurate. |
 | `halo_run.ps1`, `camera_run.ps1` + `camera_report.py`, `rdoc_run.ps1` | Halo count, camera sweep, read a RenderDoc capture. |
 | `quad-probe/README.md` | Headless Vulkan validation for quad control and stencil export. The probe uses local build libraries and does not run a game. |
+| `sparse-fixture/README.md`, `sparse-opaque-control/README.md` | Reproduce the first sparse depth write without a game. The opaque control binds the whole image and is not a scalable fix. |
 
 Debug tools in Git are in `tools/nx2/debug/`, with a README. The skill `nx2-debug-tools` gives the method.
 
