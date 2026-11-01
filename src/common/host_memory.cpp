@@ -597,32 +597,49 @@ public:
             return;
         }
 
-        // Four guest pages share one host granule. Stage the range only when this mapping covers
-        // whole granules in both the guest range and the backing, otherwise leave them to the
-        // fault path.
+        // Four guest pages share one host granule. A granule can hold them only when the guest
+        // offset and the backing offset line up, so the four pages are contiguous in both. When
+        // they do not line up, no part of this mapping can be staged.
         const size_t granule = HostPageSize();
-        if ((virtual_offset % granule) != 0 || (host_offset % granule) != 0 ||
-            (length % granule) != 0) {
+        if ((virtual_offset % granule) != (host_offset % granule)) {
             ReserveGranules(virtual_offset, length);
             return;
         }
 
-        // We are removing a placeholder.
-        free_manager.AllocateBlock(virtual_base + virtual_offset, length);
+        // Stage the whole granules and leave only the partial head and tail to the fault path.
+        const size_t range_end = virtual_offset + length;
+        const size_t aligned_start = (virtual_offset + granule - 1) & ~(granule - 1);
+        const size_t aligned_end = range_end & ~(granule - 1);
 
-        // Deduce mapping protection flags.
-        int prot_flags = PROT_NONE;
-        if (True(perms & MemoryPermission::Read))
-            prot_flags |= PROT_READ;
-        if (True(perms & MemoryPermission::Write))
-            prot_flags |= PROT_WRITE;
+        if (aligned_start < aligned_end) {
+            const size_t aligned_length = aligned_end - aligned_start;
+            const size_t aligned_host = host_offset + (aligned_start - virtual_offset);
+
+            // We are removing a placeholder.
+            free_manager.AllocateBlock(virtual_base + aligned_start, aligned_length);
+
+            // Deduce mapping protection flags.
+            int prot_flags = PROT_NONE;
+            if (True(perms & MemoryPermission::Read))
+                prot_flags |= PROT_READ;
+            if (True(perms & MemoryPermission::Write))
+                prot_flags |= PROT_WRITE;
 #ifdef ARCHITECTURE_arm64
-        if (True(perms & MemoryPermission::Execute))
-            prot_flags |= PROT_EXEC;
+            if (True(perms & MemoryPermission::Execute))
+                prot_flags |= PROT_EXEC;
 #endif
-        int flags = (fd >= 0 ? MAP_SHARED : MAP_PRIVATE) | MAP_FIXED;
-        void* ret = mmap(virtual_base + virtual_offset, length, prot_flags, flags, fd, host_offset);
-        ASSERT_MSG(ret != MAP_FAILED, "mmap: {} {}", strerror(errno), fd);
+            int flags = (fd >= 0 ? MAP_SHARED : MAP_PRIVATE) | MAP_FIXED;
+            void* ret = mmap(virtual_base + aligned_start, aligned_length, prot_flags, flags, fd,
+                             aligned_host);
+            ASSERT_MSG(ret != MAP_FAILED, "mmap: {} {}", strerror(errno), fd);
+        }
+
+        if (aligned_start > virtual_offset) {
+            ReserveGranules(virtual_offset, aligned_start - virtual_offset);
+        }
+        if (aligned_end < range_end) {
+            ReserveGranules(aligned_end, range_end - aligned_end);
+        }
     }
 
     void Unmap(size_t virtual_offset, size_t length) {
@@ -648,12 +665,14 @@ public:
         }
 
         // A permission change on part of a granule cannot be expressed without changing its
-        // neighbours, so drop the staging and let the fault path serve these pages.
+        // neighbours, so widen it to whole granules and keep the staging alive. The guest page
+        // table still records the exact per-page permission for the slow path; only the fastmem
+        // mapping is wider than the guest asked for.
         const size_t granule = HostPageSize();
-        if ((virtual_offset % granule) != 0 || (length % granule) != 0) {
-            ReserveGranules(virtual_offset, length);
-            return;
-        }
+        const size_t protect_start = virtual_offset & ~(granule - 1);
+        const size_t protect_end = (virtual_offset + length + granule - 1) & ~(granule - 1);
+        const size_t protect_length = protect_end - protect_start;
+        virtual_offset = protect_start;
 
         int flags = PROT_NONE;
         if (read) {
@@ -667,7 +686,7 @@ public:
             flags |= PROT_EXEC;
         }
 #endif
-        int ret = mprotect(virtual_base + virtual_offset, length, flags);
+        int ret = mprotect(virtual_base + virtual_offset, protect_length, flags);
         ASSERT_MSG(ret == 0, "mprotect failed: {}", strerror(errno));
     }
 
