@@ -4,6 +4,8 @@ These scripts help to debug the Switch 2 (NX2) emulator offline.
 Most of them read a log or a capture file. They do not start the emulator.
 Only `play.ps1` and `matrix.py` start it.
 
+`isberd_review.md` records the known ISBERD field overlap and the limits of upstream PR #173.
+
 ## Rules for tests
 
 - Use an isolated profile for each test run. `matrix.py` makes one.
