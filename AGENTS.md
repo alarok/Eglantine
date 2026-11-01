@@ -185,6 +185,7 @@ Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. P
 | `ubo-safe-probe/README.md` | Test GPU-written uniform bindings with Application-pool memory, including mixed writes and two snapshots in one tick. The Android branch is simulated on Windows. |
 | `framegen-widget-probe/README.md` | Test frame generation settings with Qt widgets offscreen. The probe does not open the full dialog or save an INI file. |
 | `framegen-dialog-probe/README.md` | Test the graphics settings tab and global and per-game INI reload in a new isolated profile. The probe does not run a game. |
+| `audio-lifetime-session-probe/README.md` | Test stopped input and output sessions after their manager's external owner closes. The probe does not start audio hardware. |
 
 Debug tools in Git are in `tools/nx2/debug/`, with a README. The skill `nx2-debug-tools` gives the method.
 
