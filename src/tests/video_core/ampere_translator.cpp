@@ -78,6 +78,19 @@ struct Evaluator {
                 Write(dest, cbuf.at(Field(word, 20, 14) * 4));
             } else if (high == (0x5ca8000000000000ULL >> 51)) { // F2F
                 Write(dest, Read(reg_b) & 0xffff);
+            } else if (high == (0x5cb8000000000000ULL >> 51)) { // I2F
+                const u32 int_format = Field(word, 10, 2);
+                REQUIRE(int_format <= 1);
+                const u32 width = int_format == 0 ? 8 : 16;
+                const u32 selector = Field(word, 41, 2);
+                const u32 raw = (Read(reg_b) >> (selector * 8)) & ((u32{1} << width) - 1);
+                const bool is_signed = Field(word, 13, 1) != 0;
+                const s32 integer = is_signed && (raw & (u32{1} << (width - 1)))
+                                        ? static_cast<s32>(raw) - (s32{1} << width)
+                                        : static_cast<s32>(raw);
+                const float value = is_signed ? static_cast<float>(integer)
+                                              : static_cast<float>(raw);
+                Write(dest, std::bit_cast<u32>(value));
             } else if (high == (0x5ca0000000000000ULL >> 51)) { // SEL
                 const u32 pred = Field(word, 39, 3);
                 const bool taken = (pred == 7 || preds[pred]) != (Field(word, 42, 1) != 0);
@@ -125,6 +138,48 @@ TEST_CASE("Ampere I2F U16 rejects invalid source selectors", "[video_core][amper
     CHECK(static_cast<bool>(LowerToMaxwell(high)));
     CHECK_FALSE(static_cast<bool>(LowerToMaxwell(invalid2)));
     CHECK_FALSE(static_cast<bool>(LowerToMaxwell(invalid3)));
+}
+
+TEST_CASE("Ampere signed I2F S16 converts the selected integer exactly",
+          "[video_core][ampere]") {
+    // ptxas 12.6 / nvdisasm 12.6: I2F.S16 R5, R0 (PTX cvt.rn.f32.s16).
+    const std::array<Instruction, 2> code{{
+        {{0x00057306, 0x00000000, 0x00101400, 0x004e3000}},
+        EXIT,
+    }};
+    Evaluator run;
+    run.regs[0] = 0x7f80ff01;
+    run.Run(Lower(code));
+    CHECK(std::bit_cast<float>(run.regs[5]) == -255.0f);
+}
+
+TEST_CASE("Ampere I2F U8 selects each source byte", "[video_core][ampere]") {
+    // ptxas 12.6 / nvdisasm 12.6 emits I2F.U8 R7, R0.B0; B1-B3 set native bits 60-61.
+    constexpr std::array<f32, 4> expected{1.0f, 255.0f, 128.0f, 127.0f};
+    for (u32 selector = 0; selector < expected.size(); ++selector) {
+        const std::array<Instruction, 2> code{{
+            {{0x00077306, selector << 28, 0x00001000, 0x000e6200}},
+            EXIT,
+        }};
+        Evaluator run;
+        run.regs[0] = 0x7f80ff01;
+        run.Run(Lower(code));
+        CHECK(std::bit_cast<float>(run.regs[7]) == expected[selector]);
+    }
+}
+
+TEST_CASE("Ampere uniform I2F U8 selects each source byte", "[video_core][ampere]") {
+    // ptxas 12.6 / nvdisasm 12.6: I2F.U8 R5, UR4 (PTX cvt.rn.f32.u8).
+    for (u32 selector = 0; selector < 4; ++selector) {
+        const std::array<Instruction, 2> code{{
+            {{0x00057d06, 0x00000004 | (selector << 28), 0x08001000, 0x000e2200}},
+            EXIT,
+        }};
+        Evaluator run;
+        run.regs[220] = 1;
+        run.Run(Lower(code));
+        CHECK(std::bit_cast<float>(run.regs[5]) == (selector == 0 ? 1.0f : 0.0f));
+    }
 }
 
 TEST_CASE("Ampere FSETP compares a register with a uniform register", "[video_core][ampere]") {
