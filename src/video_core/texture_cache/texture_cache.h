@@ -79,12 +79,14 @@ TextureCache<P>::TextureCache(Runtime& runtime_, Tegra::MaxwellDeviceMemoryManag
             (std::max)((std::min)(device_local_memory - min_vacancy_critical, min_spacing_critical),
                      DEFAULT_CRITICAL_MEMORY));
         minimum_memory = static_cast<u64>((device_local_memory - mem_threshold) / 2);
-#if defined(__APPLE__)
+#if defined(__APPLE__) && defined(ARCHITECTURE_arm64)
         // The GPU shares the system memory on Apple Silicon, but MoltenVK reports a 4 GiB
         // device-local heap. Sized from that figure the collectors evicted decoded textures every
         // few frames: Mario Kart World logged "expected 1638 MiB, critical 3276 MiB" and stayed at
         // 11 FPS, and raising them to 8 GiB and 16 GiB for the same scene gave 13.8 FPS. Take the
         // budget from the host memory instead, with room for the guest and the rest of the app.
+        // An Intel Mac has a discrete GPU and its own device-local heap, so it keeps the driver
+        // figures.
         const u64 host_memory = Common::GetMemInfo().TotalPhysicalMemory;
         if (host_memory > 0) {
             expected_memory = (std::max)(expected_memory, host_memory / 3);
@@ -244,7 +246,7 @@ void TextureCache<P>::TickFrame() {
         // budget as the card fills (16 GB card: 13.5 GB left mid-race), hence the re-read every 30
         // frames. EDEN_NX2_TC_*_MIB overrides still win.
         if constexpr (requires { runtime.GetDeviceMemoryBudget(); }) {
-#if !defined(__APPLE__)
+#if !(defined(__APPLE__) && defined(ARCHITECTURE_arm64))
             if (native_thresholds_applied && budget_check_frames++ % 30 == 0) {
                 const u64 budget = runtime.GetDeviceMemoryBudget();
                 if (budget > 2_GiB) {
@@ -328,7 +330,9 @@ void TextureCache<P>::TickFrame() {
         gc_deletes = gc_costly_deletes = gc_download_deletes = async_decodes_queued = 0;
         images_created = images_deleted = 0;
     }
-    if (total_used_memory > minimum_memory) {
+    // Collect above the critical figure even when the platform minimum sits higher: a user can
+    // lower the thresholds with EDEN_NX2_TC_*_MIB, and the collector must honour them.
+    if (total_used_memory > minimum_memory || total_used_memory > critical_memory) {
         RunGarbageCollector();
     }
     sentenced_images.Tick();
