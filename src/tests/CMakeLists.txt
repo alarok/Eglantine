@@ -6,6 +6,7 @@
 
 add_executable(tests
     audio_core/audio_manager.cpp
+    audio_core/session_lifetime.cpp
     common/bit_field.cpp
     common/cityhash.cpp
     common/container_hash.cpp

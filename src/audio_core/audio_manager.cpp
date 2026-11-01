@@ -25,8 +25,13 @@ AudioManager::AudioManager() {
                 const auto event_type = Event::Type(i);
                 const bool signalled = events.ConsumeAudioEvent(event_type);
                 if (signalled || timed_out) {
-                    if (buffer_events[i]) {
-                        buffer_events[i]();
+                    BufferEventFunc callback;
+                    {
+                        std::scoped_lock callback_lock{lock};
+                        callback = buffer_events[i];
+                    }
+                    if (callback) {
+                        callback();
                     }
                 }
             }
