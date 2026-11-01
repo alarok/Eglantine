@@ -15,12 +15,14 @@ FRAME = re.compile(r"last 600 presents: frame (\d+) us \(max (\d+), (\d+) over 1
 SECTION = re.compile(r"Census ([^:=]+): (.*)")  # "Census window=10.0 s" has no section
 PAIR = re.compile(r"(\w+)=(-?\d+)\b")
 LOST = re.compile(r"Lost shader stores: (.*)")
+REJECT = re.compile(r"Native (graphics|compute) shader rejected: (.*)")
+REJECT_DETAIL = re.compile(r"^.*?: (.*?) \[op ([0-9a-fA-F]+)\b")
 
 
 def parse(path):
     """Read one log. The result holds the counters of every report section."""
     run = dict(lines=Counter(), frames=[], sums=Counter(), seen=Counter(), windows=0, macros=defaultdict(lambda: [0, 0]),
-               images=set(), lost=set())
+               images=set(), lost=set(), rejects=Counter())
     with open(path, encoding="utf-8", errors="replace") as log:
         for line in log:
             for name in LEVELS + PATTERNS:
@@ -31,6 +33,12 @@ def parse(path):
             lost = LOST.search(line)
             if lost:
                 run["lost"].add(lost[1].strip())
+            reject = REJECT.search(line)
+            if reject:
+                detail = REJECT_DETAIL.search(reject[2])
+                key = ((reject[1], detail[2].lower(), detail[1]) if detail
+                       else (reject[1], "?", "no opcode detail"))
+                run["rejects"][key] += 1
             if "Census window=" in line:
                 run["windows"] += 1
             section = SECTION.search(line)
@@ -81,6 +89,11 @@ def main():
     row("--- lines", "", "")
     for name in LEVELS + PATTERNS:
         row(name, a["lines"][name], b["lines"][name])
+    row("--- native shader rejection lines", "", "")
+    for kind, opcode, reason in sorted(set(a["rejects"]) | set(b["rejects"])):
+        key = (kind, opcode, reason)
+        op = f"0x{opcode}" if opcode != "?" else opcode
+        row(f"{kind} {op} {reason}", a["rejects"][key], b["rejects"][key])
     row("--- frame times (600-present windows)", "", "")
     labels = ("windows", "frame mean us", "frame worst us", "presents over 100 ms", "GPU fence mean us", "GPU fence worst us")
     for label, x, y in zip(labels, frame_stats(a), frame_stats(b)):
