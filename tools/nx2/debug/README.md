@@ -128,6 +128,9 @@ The first line of a capture holds the reason. Each next line is one pushbuffer e
 
 ## Process tools
 
+- `commitwatch.py`: record a process's private commit, shared commit, working set, and system commit.
+  `python commitwatch.py <process.json|pid> <out.csv> [--every S] [--survey-every S] [--seconds N]`
+  The optional address-space survey can stall the process. Set `--survey-every 0` for frame-time tests.
 - `threads.py`: use it to see the CPU use of each thread of a running process.
   `python threads.py <exe-name> [delay-s] [window-s] [repeats]`
 - `symbolize.py`: use it to name an offset of `eden-cli.exe` with its PDB. It needs Windows `dbghelp`.
