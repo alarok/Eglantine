@@ -4,6 +4,8 @@
 // SPDX-FileCopyrightText: Copyright 2021 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <boost/icl/interval_set.hpp>
+
 #ifdef _WIN32
 
 #include <iterator>
@@ -585,6 +587,7 @@ public:
             return;
         }
         free_manager.AllocateBlock(virtual_base + start, end - start);
+        staged_regions.erase({start, end});
         void* ret = mmap(virtual_base + start, end - start, PROT_NONE,
                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
         ASSERT_MSG(ret != MAP_FAILED, "mmap reserve: {}", strerror(errno));
@@ -632,6 +635,9 @@ public:
             void* ret = mmap(virtual_base + aligned_start, aligned_length, prot_flags, flags, fd,
                              aligned_host);
             ASSERT_MSG(ret != MAP_FAILED, "mmap: {} {}", strerror(errno), fd);
+            if (ret != MAP_FAILED) {
+                staged_regions.insert({aligned_start, aligned_end});
+            }
         }
 
         if (aligned_start > virtual_offset) {
@@ -665,14 +671,12 @@ public:
         }
 
         // A permission change on part of a granule cannot be expressed without changing its
-        // neighbours, so widen it to whole granules and keep the staging alive. The guest page
-        // table still records the exact per-page permission for the slow path; only the fastmem
-        // mapping is wider than the guest asked for.
+        // neighbours, so widen it to whole granules. A reserved granule must stay inaccessible:
+        // changing its protection would let a fastmem access read zeroes instead of faulting into
+        // the page table, so only staged granules change here.
         const size_t granule = HostPageSize();
         const size_t protect_start = virtual_offset & ~(granule - 1);
         const size_t protect_end = (virtual_offset + length + granule - 1) & ~(granule - 1);
-        const size_t protect_length = protect_end - protect_start;
-        virtual_offset = protect_start;
 
         int flags = PROT_NONE;
         if (read) {
@@ -686,8 +690,15 @@ public:
             flags |= PROT_EXEC;
         }
 #endif
-        int ret = mprotect(virtual_base + virtual_offset, protect_length, flags);
-        ASSERT_MSG(ret == 0, "mprotect failed: {}", strerror(errno));
+        boost::icl::interval_set<size_t> wanted;
+        wanted.insert({protect_start, protect_end});
+        const auto found = staged_regions & wanted;
+        for (auto it = found.begin(); it != found.end(); ++it) {
+            const size_t start = it->lower();
+            const size_t size = it->upper() - start;
+            int ret = mprotect(virtual_base + start, size, flags);
+            ASSERT_MSG(ret == 0, "mprotect failed: {}", strerror(errno));
+        }
     }
 
     void EnableDirectMappedAddress() {
@@ -743,6 +754,7 @@ private:
 
     int fd{-1}; // memfd file descriptor, -1 is the error value of memfd_create
     FreeRegionManager free_manager{};
+    boost::icl::interval_set<size_t> staged_regions{}; ///< Arena offsets that hold a real mapping
 };
 
 #endif // ^^^ POSIX ^^^
