@@ -118,6 +118,14 @@ The first line of a capture holds the reason. Each next line is one pushbuffer e
 - `pipecache.py`: use it to read a shader disk cache (`vulkan.bin`) without the emulator. It counts pipelines and groups them by device features. With two files it shows the keys they share, and how the other keys differ.
   `python pipecache.py <vulkan.bin> [<other vulkan.bin>]`
 
+## Native shader dumps
+
+- `native_lower_replay.exe`: read one local dump from `EDEN_NX2_SHADER_DUMP` and run `LowerToMaxwell` offline. It does not run the GPU or verify pixels.
+  In a Visual Studio developer prompt, run `cl /nologo /std:c++20 /EHsc /Isrc tools/nx2/debug/native_lower_replay.cpp /Fo:D:\DEV\tmp\native_lower_replay.obj /Fe:D:\DEV\tmp\native_lower_replay.exe`.
+  Then run `D:\DEV\tmp\native_lower_replay.exe D:\DEV\tmp\shader.bin`.
+  Exit code 0 means the lowerer accepted the program, 1 means it rejected the program, and 2 means the file is invalid.
+  Keep game shader dumps outside Git.
+
 ## RenderDoc tools
 
 - `rdoc_batch.py`: use it to read a RenderDoc capture with no manual work. It runs in the Python of RenderDoc. The header of the file lists the commands.
