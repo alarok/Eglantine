@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <array>
+#include <bit>
 #include <ios>
 #include <map>
 #include <span>
+#include <utility>
 #include <vector>
 #include <catch2/catch_test_macros.hpp>
 
@@ -84,6 +86,15 @@ struct Evaluator {
                 REQUIRE(Field(word, 49, 3) == 1); // less than
                 REQUIRE(Field(word, 48, 1) == 0); // unsigned
                 preds[Field(word, 3, 3)] = Read(reg_a) < Read(reg_b);
+            } else if (high == (0x5bb0000000000000ULL >> 51)) { // FSETP
+                REQUIRE(Field(word, 48, 4) == 1); // less than
+                REQUIRE(Field(word, 45, 2) == 0); // and
+                REQUIRE(Field(word, 39, 4) == 7); // PT
+                REQUIRE(Field(word, 6, 2) == 0);
+                REQUIRE(Field(word, 43, 2) == 0);
+                const bool result = std::bit_cast<float>(Read(reg_a)) < std::bit_cast<float>(Read(reg_b));
+                preds[Field(word, 3, 3)] = result;
+                preds[Field(word, 0, 3)] = !result;
             } else if (word >> 52 == 0xe30) { // EXIT
                 return;
             } else {
@@ -98,6 +109,28 @@ std::vector<u64> Lower(std::span<const Instruction> code) {
     INFO(lowered.error);
     REQUIRE(static_cast<bool>(lowered));
     return lowered.instructions;
+}
+
+TEST_CASE("Ampere FSETP compares a register with a uniform register", "[video_core][ampere]") {
+    // FSETP.LT.AND P1, P2, R1, UR5, PT.
+    const std::array<Instruction, 2> code{{{{0x01007c0b, 5, 0x03a21000, 0}}, EXIT}};
+    const auto compare = [&](float a, float b) {
+        Evaluator run;
+        run.regs[1] = std::bit_cast<u32>(a);
+        run.regs[221] = std::bit_cast<u32>(b); // UR5
+        run.Run(Lower(code));
+        return std::pair{run.preds[1], run.preds[2]};
+    };
+    REQUIRE((compare(1.0f, 2.0f) == std::pair{true, false}));
+    REQUIRE((compare(3.0f, 2.0f) == std::pair{false, true}));
+}
+
+TEST_CASE("Ampere uniform FSETP reserves the uniform register bank", "[video_core][ampere]") {
+    // R216 aliases UR0 when the program uses the uniform register bank.
+    const std::array<Instruction, 2> code{{{{0xd8007c0b, 5, 0x03a21000, 0}}, EXIT}};
+    const auto lowered = LowerToMaxwell(code);
+    REQUIRE_FALSE(static_cast<bool>(lowered));
+    REQUIRE(lowered.error == "native program uses lowering scratch registers");
 }
 
 TEST_CASE("Ampere IADD3 reads bit 63 of an immediate as its sign", "[video_core][ampere]") {
