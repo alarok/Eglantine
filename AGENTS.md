@@ -181,7 +181,7 @@ Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. P
 | `sparse-fixture/README.md`, `sparse-opaque-control/README.md` | Reproduce the first sparse depth write without a game. The opaque control binds the whole image and is not a scalable fix. |
 | `sparse-layer-control/README.md` | Test a D16 sparse layer bind, depth clear and readback on the RTX 4080. Other formats, mip initialization and shader sampling remain untested. |
 | `sparse-layer-repeat-agent/README.md` | Test zero-initialized D16 mipmaps, a partial clear and a second layer bind. The probe binds memory directly and does not test the production cache path. |
-| `drawtexture-cache-probe/README.md` | Replay deferred texture invalidation with the Vulkan cache and blitter. The probe does not call `DrawTexture` itself. |
+| `drawtexture-cache-probe/README.md` | Replay deferred texture invalidation with Application-pool memory, the Vulkan cache and blitter. The probe does not call `DrawTexture` itself. |
 | `ubo-safe-probe/README.md` | Test GPU-written uniform bindings with Application-pool memory, including mixed writes and two snapshots in one tick. The Android branch is simulated on Windows. |
 
 Debug tools in Git are in `tools/nx2/debug/`, with a README. The skill `nx2-debug-tools` gives the method.
