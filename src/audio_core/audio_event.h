@@ -88,6 +88,8 @@ public:
 private:
     /// Lock, used by the audio manager
     std::mutex event_lock;
+    /// Serializes event changes with the wait predicate.
+    std::mutex notification_mutex;
     /// Array of events, one per system type (see Type), last event is used to terminate
     std::array<std::atomic<bool>, 4> events_signalled;
     /// Event to signal the audio manager

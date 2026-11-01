@@ -6,6 +6,7 @@
 
 #include "audio_core/audio_event.h"
 #include "common/assert.h"
+#include "common/scope_exit.h"
 #include <ranges>
 
 namespace AudioCore {
@@ -26,7 +27,10 @@ size_t Event::GetManagerIndex(const Type type) const {
 }
 
 void Event::SetAudioEvent(const Type type, const bool signalled) {
-    events_signalled[GetManagerIndex(type)] = signalled;
+    {
+        std::scoped_lock notification_lock{notification_mutex};
+        events_signalled[GetManagerIndex(type)] = signalled;
+    }
     if (signalled) {
         manager_event.notify_one();
     }
@@ -49,8 +53,11 @@ std::condition_variable_any& Event::GetAudioEvent() {
 }
 
 bool Event::Wait(std::unique_lock<std::mutex>& l, const std::chrono::seconds timeout) {
+    l.unlock();
+    SCOPE_EXIT { l.lock(); };
+    std::unique_lock notification_lock{notification_mutex};
     bool timed_out{false};
-    if (!manager_event.wait_for(l, timeout, [&]() {
+    if (!manager_event.wait_for(notification_lock, timeout, [&]() {
             return std::ranges::any_of(events_signalled, [](bool x) { return x; });
         })) {
         timed_out = true;

@@ -187,6 +187,7 @@ Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. P
 | `framegen-widget-probe/README.md` | Test frame generation settings with Qt widgets offscreen. The probe does not open the full dialog or save an INI file. |
 | `framegen-dialog-probe/README.md` | Test the graphics settings tab and global and per-game INI reload in a new isolated profile. The probe does not run a game. |
 | `audio-lifetime-session-probe/README.md` | Test stopped input and output sessions after their manager's external owner closes. The probe does not start audio hardware. |
+| `audio-wake-probe/README.md` | Force the audio event signal between the wait predicate and sleep. The probe uses an instrumented source overlay. |
 
 Debug tools in Git are in `tools/nx2/debug/`, with a README. The skill `nx2-debug-tools` gives the method.
 
@@ -235,7 +236,6 @@ Traps on the console:
 
 - Native `WARPSYNC` currently lowers to a no-op. Its memory-order and divergent-lane behavior need a shader test before this can be treated as correct.
 - Audio input and output service destructors close the event before destroying the session implementation. Test a started session with queued buffers before treating that order as safe.
-- Audio event notification can race with the worker entering its condition-variable wait. The callback event-consumption fix does not close that wakeup race.
 - The Vulkan `DrawTexture` path for non-2D sources still uses the old raw blit. Integer and multisampled sources and source/destination feedback need tests. The 2D probe does not run a game.
 - Mario Kart build 32 logged a lost first GPU write to an `UnwrittenSparse` depth array and an `UNIMPLEMENTED` assertion. The run continued. Promoting the image during render-target lookup can invalidate sampled views that the pipeline already collected. Test an array view and a render-target layer used in the same draw before changing that order.
 - Do not route depth images to `SparseLayers` without handling initialization, metadata, mip tails and GPU-written data at eviction. `IsDownloadable` currently excludes unbacked images. The D16 layer probe does not test those paths.
