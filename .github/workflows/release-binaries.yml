@@ -20,9 +20,10 @@ env:
   # Change the tag by hand.
   PGO_PROFILE_TAG: v020525
 
+# A new dispatch waits. It must not cancel a release that can still publish.
 concurrency:
   group: release-binaries-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   workflow-validation:
