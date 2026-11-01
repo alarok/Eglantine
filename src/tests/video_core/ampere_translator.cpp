@@ -113,7 +113,7 @@ std::vector<u64> Lower(std::span<const Instruction> code) {
 
 TEST_CASE("Ampere FSETP compares a register with a uniform register", "[video_core][ampere]") {
     // FSETP.LT.AND P1, P2, R1, UR5, PT.
-    const std::array<Instruction, 2> code{{{{0x01007c0b, 5, 0x03a21000, 0}}, EXIT}};
+    const std::array<Instruction, 2> code{{{{0x01007c0b, 5, 0x0ba21000, 0}}, EXIT}};
     const auto compare = [&](float a, float b) {
         Evaluator run;
         run.regs[1] = std::bit_cast<u32>(a);
@@ -127,10 +127,23 @@ TEST_CASE("Ampere FSETP compares a register with a uniform register", "[video_co
 
 TEST_CASE("Ampere uniform FSETP reserves the uniform register bank", "[video_core][ampere]") {
     // R216 aliases UR0 when the program uses the uniform register bank.
-    const std::array<Instruction, 2> code{{{{0xd8007c0b, 5, 0x03a21000, 0}}, EXIT}};
+    const std::array<Instruction, 2> code{{{{0xd8007c0b, 5, 0x0ba21000, 0}}, EXIT}};
     const auto lowered = LowerToMaxwell(code);
     REQUIRE_FALSE(static_cast<bool>(lowered));
     REQUIRE(lowered.error == "native program uses lowering scratch registers");
+}
+
+TEST_CASE("A disabled uniform instruction does not reserve registers", "[video_core][ampere]") {
+    const std::array<Instruction, 3> code{{
+        {{0xd8007210, 2, 0x07ffe003, 0}}, // IADD3 R0, R216, R2, R3
+        {{0x0100fc0b, 5, 0x0ba21000, 0}}, // @!PT FSETP.LT.AND P1, P2, R1, UR5, PT
+        EXIT,
+    }};
+    Evaluator run;
+    run.regs[216] = 5;
+    run.regs[2] = 1;
+    run.Run(Lower(code));
+    REQUIRE(run.regs[0] == 6);
 }
 
 TEST_CASE("Ampere IADD3 reads bit 63 of an immediate as its sign", "[video_core][ampere]") {
