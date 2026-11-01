@@ -78,9 +78,12 @@ public:
         uncommitted_operations.emplace_back(std::move(func));
     }
 
-    void SignalFence(std::function<void()>&& func) {
+    void SignalFence(std::function<void()>&& func, bool force_delay = false) {
         Nx2Profile::Scope profile_scope{Nx2Profile::Zone::Fence};
-        const bool delay_fence = Settings::IsGPUFenceBehaviorDefault() ? Settings::IsGPULevelHigh() : Settings::IsGPUFenceBehaviorBalanced() || Settings::IsGPUFenceBehaviorAccurate();
+        const bool delay_fence = force_delay || (Settings::IsGPUFenceBehaviorDefault()
+                                                     ? Settings::IsGPULevelHigh()
+                                                     : Settings::IsGPUFenceBehaviorBalanced() ||
+                                                           Settings::IsGPUFenceBehaviorAccurate());
         if constexpr (!can_async_check) {
             TryReleasePendingFences<false>();
         }
@@ -143,7 +146,8 @@ public:
                 wait_finished.store(true, std::memory_order_relaxed);
                 wait_cv.notify_all();
             });
-            SignalFence(std::move(func));
+            // The completion callback must run after cache downloads, including in immediate mode.
+            SignalFence(std::move(func), true);
             std::unique_lock lk(wait_mutex);
             wait_cv.wait(
                 lk, [&wait_finished] { return wait_finished.load(std::memory_order_relaxed); });
