@@ -264,17 +264,25 @@ jobs:
           restore-keys: |
             cpm-${{ runner.os }}-
 
-      # The run id in the key makes every run save a fresh cache (a cache never saves over an exact
-      # hit), and restore-keys seeds it from the newest one of the same platform.
+      # The old keys used a single dash after the platform. Use the first digit of the run id to
+      # migrate those caches without matching platform names such as linux-x86_64-pgo.
+      - name: Select legacy compiler cache prefix
+        id: compiler-cache-prefix
+        shell: bash
+        run: echo "run_id_head=${GITHUB_RUN_ID:0:1}" >> "$GITHUB_OUTPUT"
+
+      # The double dash separates the platform from the run id. It prevents a shorter platform
+      # name from matching a longer one. Each run saves a fresh cache.
       - name: Restore compiler objects
         uses: actions/cache/restore@v4
         with:
           path: |
             .ccache
             .sccache
-          key: objects-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: objects-${{ matrix.platform }}--${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            objects-${{ matrix.platform }}-
+            objects-${{ matrix.platform }}--
+            objects-${{ matrix.platform }}-${{ steps.compiler-cache-prefix.outputs.run_id_head }}
 
       - name: Configure Linux
         if: startsWith(matrix.platform, 'linux')
@@ -411,7 +419,7 @@ jobs:
           path: |
             .ccache
             .sccache
-          key: objects-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: objects-${{ matrix.platform }}--${{ github.run_id }}-${{ github.run_attempt }}
 
       # Plain tar.gz with the two programs. GitHub artifacts drop the executable bit, so a tar is
       # what keeps it. This one is not self-contained: it needs Qt 6 and the usual libraries
