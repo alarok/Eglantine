@@ -174,6 +174,8 @@ Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. P
 | `gui_settings_runs.ps1 -Label <l> -Variants <v> -Seconds <n>` | Bananza from Deku's save point. The log is `<l>-bananza-c\<v>\user\log\eden_log.txt`, the sheet is `<l>-bananza-c\thumbs.png`. |
 | `regress_run.ps1 -Label <l> -Game <mkw-c or pokopia> -Variant <v> -Item <item or none>` | Another game, with an A/B inside the run. It has the GPU profile on. |
 | `mkw_race.ps1 -Exe <exe> -Label <l> [-Seconds 300]` | A driven race of Mario Kart World: the taps reach the first Grand Prix race, and A stays down from 126 s. Smart steering drives two laps. The log is `<l>-mkw-c\seed-acc0-nr\user\log\eden_log.txt`. The kart in `seed-acc0` runs stays at the start line, so use this script for race numbers. Two equal runs differ by 2.7 ms, because the race changes each time. So compare builds with more than one run each. |
+| `mkw_race_guarded.ps1` | Run the same race with `matrix_guarded.py`. It requires 50 GiB of commit headroom and stops its own emulator below 8 GiB. |
+| `stub_log_report.py <before> <after>` | Compare auto-stub reports in two logs. It checks that shared commands do not produce critical assertions or duplicate warnings after the change. |
 | `race_series.ps1 race5=<exe> race6=<exe> ...`, `race_means.py <label> ...`, `race_stalls.py <label> ...` | Run a series of races and print the mean frame time after 140 s, the stalls and the draws per picture. The folder of each exe goes first on `PATH`, so a CI build finds its DLLs. |
 | `matrix.py` | Defines the variants. `owner-cold` is Deku's settings with an empty cache, `seed-acc0` is Fast, `seed` is Accurate. |
 | `halo_run.ps1`, `camera_run.ps1` + `camera_report.py`, `rdoc_run.ps1` | Halo count, camera sweep, read a RenderDoc capture. |
@@ -235,6 +237,7 @@ Traps on the console:
 ## Open faults on 2026-10-31
 
 - Native `WARPSYNC` currently lowers to a no-op. Its memory-order and divergent-lane behavior need a shader test before this can be treated as correct.
+- Upstream PR #173 drops `ISBEWR` writes and maps `ISBERD` modes beyond the existing map-read case. Do not assume those writes are harmless or that the mapped modes preserve their semantics.
 - Audio input and output service destructors close the event before destroying the session implementation. Test a started session with queued buffers before treating that order as safe.
 - The Vulkan `DrawTexture` path for non-2D sources still uses the old raw blit. Integer and multisampled sources and source/destination feedback need tests. The 2D probe does not run a game.
 - Mario Kart build 32 logged a lost first GPU write to an `UnwrittenSparse` depth array and an `UNIMPLEMENTED` assertion. The run continued. Promoting the image during render-target lookup can invalidate sampled views that the pipeline already collected. Test an array view and a render-target layer used in the same draw before changing that order.
