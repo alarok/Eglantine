@@ -182,6 +182,7 @@ Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. P
 | `sparse-layer-control/README.md` | Test a D16 sparse layer bind, depth clear and readback on the RTX 4080. Other formats, mip initialization and shader sampling remain untested. |
 | `sparse-layer-repeat-agent/README.md` | Test zero-initialized D16 mipmaps, a partial clear and a second layer bind. The probe binds memory directly and does not test the production cache path. |
 | `drawtexture-cache-probe/README.md` | Replay deferred texture invalidation with Application-pool memory, the Vulkan cache and blitter. The probe does not call `DrawTexture` itself. |
+| `drawtexture-full-probe/README.md` | Test `DrawManager::DrawTexture` and the Vulkan rasterizer with safe guest memory. The probe does not decode a guest pushbuffer or run a game. |
 | `ubo-safe-probe/README.md` | Test GPU-written uniform bindings with Application-pool memory, including mixed writes and two snapshots in one tick. The Android branch is simulated on Windows. |
 | `framegen-widget-probe/README.md` | Test frame generation settings with Qt widgets offscreen. The probe does not open the full dialog or save an INI file. |
 | `framegen-dialog-probe/README.md` | Test the graphics settings tab and global and per-game INI reload in a new isolated profile. The probe does not run a game. |
@@ -235,7 +236,7 @@ Traps on the console:
 - Native `WARPSYNC` currently lowers to a no-op. Its memory-order and divergent-lane behavior need a shader test before this can be treated as correct.
 - Audio input and output service destructors close the event before destroying the session implementation. Test a started session with queued buffers before treating that order as safe.
 - Audio event notification can race with the worker entering its condition-variable wait. The callback event-consumption fix does not close that wakeup race.
-- The Vulkan `DrawTexture` path for non-2D sources still uses the old raw blit. Integer and multisampled sources and source/destination feedback need tests. The 2D probe does not call `DrawTexture` itself or run a game.
+- The Vulkan `DrawTexture` path for non-2D sources still uses the old raw blit. Integer and multisampled sources and source/destination feedback need tests. The 2D probe does not run a game.
 - Mario Kart build 32 logged a lost first GPU write to an `UnwrittenSparse` depth array and an `UNIMPLEMENTED` assertion. The run continued. Promoting the image during render-target lookup can invalidate sampled views that the pipeline already collected. Test an array view and a render-target layer used in the same draw before changing that order.
 - Do not route depth images to `SparseLayers` without handling initialization, metadata, mip tails and GPU-written data at eviction. `IsDownloadable` currently excludes unbacked images. The D16 layer probe does not test those paths.
 - Without `VK_EXT_shader_stencil_export`, copies between images with different sample counts can copy depth without stencil. A clean shader-module validation does not prove that stencil was copied.
