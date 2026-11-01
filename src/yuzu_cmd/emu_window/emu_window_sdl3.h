@@ -47,6 +47,9 @@ public:
     /// Wait for the next event on the main thread.
     void OnEvent(SDL_Event& event);
 
+    /// Refresh the title from the main thread when its interval expires.
+    void UpdateTitle();
+
     // Sets the window icon from yuzu.bmp
     void SetWindowIcon();
 
@@ -90,8 +93,7 @@ protected:
     /// Called when a configuration change affects the minimal size of the window
     void OnMinimalClientAreaChangeRequest(std::pair<u32, u32> minimal_size) override;
 
-    /// Periodic changer of titlebar (independent of event loop)
-    SDL_TimerID titlebar_timer;
+    Uint64 last_title_update{};
 
     // Mouse resetter once it
     SDL_TimerID mouse_timer;

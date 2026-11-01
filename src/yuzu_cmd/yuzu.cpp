@@ -481,7 +481,11 @@ static void RunKeyScript(InputCommon::InputSubsystem& input_subsystem) {
 extern "C" SDL_AppResult SDL_AppIterate(void *appstate) {
     SdlState *state = (SdlState *)appstate;
     RunKeyScript(state->input_subsystem);
-    return state->emu_window && state->emu_window->IsOpen() ? SDL_APP_CONTINUE : SDL_APP_SUCCESS;
+    if (!state->emu_window || !state->emu_window->IsOpen()) {
+        return SDL_APP_SUCCESS;
+    }
+    state->emu_window->UpdateTitle();
+    return SDL_APP_CONTINUE;
 }
 extern "C" SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
     SdlState *state = (SdlState *)appstate;

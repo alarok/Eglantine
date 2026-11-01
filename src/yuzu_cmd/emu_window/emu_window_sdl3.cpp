@@ -35,13 +35,7 @@ EmuWindow_SDL3::EmuWindow_SDL3(InputCommon::InputSubsystem* input_subsystem_, Co
         LOG_CRITICAL(Frontend, "Failed to initialize SDL3: {}, Exiting...", SDL_GetError());
         exit(1);
     }
-    titlebar_timer = SDL_AddTimer(2000, [](void *userdata, SDL_TimerID, Uint32) -> Uint32 {
-        auto* this_ = (EmuWindow_SDL3*)userdata;
-        auto const results = this_->system.GetAndResetPerfStats();
-        auto const title = fmt::format("{} | {}-{} | FPS: {:.0f} ({:.0f}%)", Common::g_build_fullname, Common::g_scm_branch, Common::g_scm_desc, results.average_game_fps, results.emulation_speed * 100.0f);
-        SDL_SetWindowTitle(this_->render_window, title.c_str());
-        return 2000;
-    }, this);
+    last_title_update = SDL_GetTicks();
     mouse_timer = SDL_AddTimer(100, [](void *userdata, SDL_TimerID, Uint32) -> Uint32 {
         auto* this_ = (EmuWindow_SDL3*)userdata;
         // The timer can fire before the input subsystem has created its mouse driver.
@@ -53,11 +47,23 @@ EmuWindow_SDL3::EmuWindow_SDL3(InputCommon::InputSubsystem* input_subsystem_, Co
 }
 
 EmuWindow_SDL3::~EmuWindow_SDL3() {
-    SDL_RemoveTimer(titlebar_timer);
     SDL_RemoveTimer(mouse_timer);
     system.HIDCore().UnloadInputDevices();
     input_subsystem->Shutdown();
     SDL_Quit();
+}
+
+void EmuWindow_SDL3::UpdateTitle() {
+    const Uint64 now = SDL_GetTicks();
+    if (now - last_title_update < 2000) {
+        return;
+    }
+    last_title_update = now;
+    const auto results = system.GetAndResetPerfStats();
+    const auto title = fmt::format("{} | {}-{} | FPS: {:.0f} ({:.0f}%)", Common::g_build_fullname,
+                                   Common::g_scm_branch, Common::g_scm_desc,
+                                   results.average_game_fps, results.emulation_speed * 100.0f);
+    SDL_SetWindowTitle(render_window, title.c_str());
 }
 
 InputCommon::MouseButton EmuWindow_SDL3::SDLButtonToMouseButton(u32 button) const {
@@ -210,11 +216,6 @@ void EmuWindow_SDL3::Fullscreen() {
 }
 
 void EmuWindow_SDL3::OnEvent(SDL_Event& event) {
-    // Notice how we skip the "update title" aspect on most events
-    // this is because some WMs do NOT like changing titles while resizing
-    // so let's just... not do that, thanks :)
-    // Afterall we don't really expect the user to pay attention to the titlebar
-    // while they're moving a lot of shit around...
     switch (event.type) {
     case SDL_EVENT_WINDOW_RESIZED:
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
