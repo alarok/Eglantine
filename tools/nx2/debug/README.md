@@ -5,6 +5,7 @@ Most of them read a log or a capture file. They do not start the emulator.
 Only `play.ps1` and `matrix.py` start it.
 
 `isberd_review.md` records the known ISBERD field overlap and the limits of upstream PR #173.
+`sured_review.md` records the rejected compute reduction and an independent PTX encoding fixture.
 
 ## Rules for tests
 
