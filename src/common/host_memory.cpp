@@ -79,6 +79,7 @@ namespace Common {
 // The host page is not always the guest page: Apple Silicon uses 16 KB pages while the guest uses
 // 4 KB. Mappings and protections work on host pages, so the arena stages whole host granules and
 // leaves a granule unstaged when one guest mapping covers only part of it.
+#if !defined(_WIN32)
 [[maybe_unused]] static size_t HostPageSize() {
     static const size_t size = [] {
         const long value = sysconf(_SC_PAGESIZE);
@@ -86,6 +87,7 @@ namespace Common {
     }();
     return size;
 }
+#endif
 
 #ifdef _WIN32
 
