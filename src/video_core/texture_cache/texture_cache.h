@@ -87,8 +87,8 @@ TextureCache<P>::TextureCache(Runtime& runtime_, Tegra::MaxwellDeviceMemoryManag
         // budget from the host memory instead, with room for the guest and the rest of the app.
         const u64 host_memory = Common::GetMemInfo().TotalPhysicalMemory;
         if (host_memory > 0) {
-            expected_memory = (std::max)(expected_memory, host_memory / 6);
-            critical_memory = (std::max)(critical_memory, host_memory / 3);
+            expected_memory = (std::max)(expected_memory, host_memory / 3);
+            critical_memory = (std::max)(critical_memory, (2 * host_memory) / 3);
             minimum_memory = (std::max)(minimum_memory, host_memory / 12);
         }
 #endif
