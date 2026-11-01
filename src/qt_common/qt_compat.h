@@ -5,7 +5,7 @@
 
 #include <QtGlobal>
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 9, 0)
+#if QT_VERSION < QT_VERSION_CHECK(6, 7, 0)
 #define STATE_CHANGED stateChanged
 #define CHECKSTATE_TYPE int
 #else
