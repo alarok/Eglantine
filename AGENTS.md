@@ -221,6 +221,7 @@ Traps on the console:
 
 ## Open faults on 2026-10-31
 
+- Mario Kart build 32 logged a lost first GPU write to an `UnwrittenSparse` depth array and an `UNIMPLEMENTED` assertion. The run continued. Promoting the image during render-target lookup can invalidate sampled views that the pipeline already collected. Test an array view and a render-target layer used in the same draw before changing that order.
 - Black 3D view in Bananza. 99.95% of the 3D area is exactly 0, and the HUD stays. On the console with build 27: GPU High with asynchronous GPU gave 6 of 12 and 11 of 14 black captures. GPU Low gave 0 of 56 with asynchronous GPU and 0 of 56 without it. Which GPU-written value the guest reads is not known. Asynchronous shaders and BC3 are not the required cause.
 - The old PC run `amd1-bananza-c` also has black captures. Its log reports `Generic31Y` pipeline errors and over 180,000 failed draws per 2 s. The newer `amd3-bananza-c` executable has neither that error nor black captures. These runs do not prove that the current console fault occurs on the PC.
 - NS2 `69debf7d` is a semaphore visibility candidate. `GpuSplit::Drain` waits for the back thread, not GPU completion. Trace the release, real GPU fence, callback, and macro read before forwarding a pending payload.
