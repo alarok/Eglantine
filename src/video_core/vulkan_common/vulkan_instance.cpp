@@ -22,6 +22,13 @@
 namespace Vulkan {
 namespace {
 
+[[nodiscard]] bool HasExtension(const std::vector<VkExtensionProperties>& properties,
+                                const char* extension) {
+    return std::ranges::any_of(properties, [extension](const auto& prop) {
+        return std::strcmp(extension, prop.extensionName) == 0;
+    });
+}
+
 [[nodiscard]] bool AreExtensionsSupported(const vk::InstanceDispatch& dld, std::vector<VkExtensionProperties> const& properties, std::span<const char* const> extensions) {
     for (const char* extension : extensions) {
         const auto it = std::ranges::find_if(properties, [extension](const auto& prop) {
@@ -36,7 +43,8 @@ namespace {
 }
 
 [[nodiscard]] std::vector<const char*> RequiredExtensions(
-    const vk::InstanceDispatch& dld, std::vector<VkExtensionProperties> const& properties,
+    [[maybe_unused]] const vk::InstanceDispatch& dld,
+    std::vector<VkExtensionProperties> const& properties,
     Core::Frontend::WindowSystemType window_type, bool enable_validation) {
     std::vector<const char*> extensions;
     extensions.reserve(6);
@@ -77,10 +85,10 @@ namespace {
     // Probe optional extensions against the same snapshot the caller verifies against, so the
     // check here and the verification in CreateInstance can never disagree (see TOCTOU note below).
 #ifdef __APPLE__
-    if (AreExtensionsSupported(dld, properties, std::array{VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME}))
+    if (HasExtension(properties, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME))
         extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
 #endif
-    if (enable_validation && AreExtensionsSupported(dld, properties, std::array{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}))
+    if (enable_validation && HasExtension(properties, VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     return extensions;
 }
