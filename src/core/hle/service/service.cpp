@@ -101,12 +101,14 @@ void ServiceFrameworkBase::ReportUnimplementedFunction(HLERequestContext& ctx,
     buf.push_back('}');
 
     system.GetReporter().SaveUnimplementedFunctionReport(ctx, ctx.GetCommand(), function_name, service_name);
-    UNIMPLEMENTED_MSG("Unknown / unimplemented {}", fmt::to_string(buf));
     if (auto_stub) {
-        LOG_WARNING(Service, "Using auto stub fallback (repeats of this command are not logged)");
+        LOG_WARNING(Service, "Using auto stub fallback for {} (repeats are not logged)",
+                    fmt::to_string(buf));
         IPC::ResponseBuilder rb{ctx, 2};
         rb.Push(ResultSuccess);
+        return;
     }
+    UNIMPLEMENTED_MSG("Unknown / unimplemented {}", fmt::to_string(buf));
 }
 
 void ServiceFrameworkBase::InvokeRequest(HLERequestContext& ctx) {

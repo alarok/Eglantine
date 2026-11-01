@@ -111,6 +111,22 @@ std::vector<u64> Lower(std::span<const Instruction> code) {
     return lowered.instructions;
 }
 
+TEST_CASE("Ampere I2F U16 rejects invalid source selectors", "[video_core][ampere]") {
+    const std::array<Instruction, 2> low{
+        {{{0x00007306, 0x00000001, 0x00101000, 0x000fe200}}, EXIT}};
+    const std::array<Instruction, 2> high{
+        {{{0x00007306, 0x10000001, 0x00101000, 0x000fe200}}, EXIT}};
+    const std::array<Instruction, 2> invalid2{
+        {{{0x00007306, 0x20000001, 0x00101000, 0x000fe200}}, EXIT}};
+    const std::array<Instruction, 2> invalid3{
+        {{{0x00007306, 0x30000001, 0x00101000, 0x000fe200}}, EXIT}};
+
+    CHECK(static_cast<bool>(LowerToMaxwell(low)));
+    CHECK(static_cast<bool>(LowerToMaxwell(high)));
+    CHECK_FALSE(static_cast<bool>(LowerToMaxwell(invalid2)));
+    CHECK_FALSE(static_cast<bool>(LowerToMaxwell(invalid3)));
+}
+
 TEST_CASE("Ampere FSETP compares a register with a uniform register", "[video_core][ampere]") {
     // FSETP.LT.AND P1, P2, R1, UR5, PT.
     const std::array<Instruction, 2> code{{{{0x01007c0b, 5, 0x0ba21000, 0}}, EXIT}};

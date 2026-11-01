@@ -3067,6 +3067,8 @@ ImageView::ImageView(TextureCacheRuntime& runtime, const VideoCommon::ImageViewI
         .components = swizzle_mapping,
         .subresourceRange = MakeSubresourceRange(aspect_mask, HostRange(image, info.range)),
     };
+    host_base_mip_level = create_info.subresourceRange.baseMipLevel;
+    host_mip_level_count = create_info.subresourceRange.levelCount;
     const auto create = [&](TextureType tex_type, std::optional<u32> num_layers) {
         VkImageViewCreateInfo ci{create_info};
         ci.viewType = ImageViewType(tex_type);

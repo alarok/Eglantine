@@ -33,7 +33,7 @@ jobs:
       contents: read
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Lint GitHub workflows
         shell: bash
@@ -60,7 +60,7 @@ jobs:
       full_build: ${{ steps.classify.outputs.full_build }}
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 2
 
@@ -131,7 +131,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Linux dependencies
         if: startsWith(matrix.platform, 'linux')
@@ -210,7 +210,9 @@ jobs:
 
       - name: Set up MSVC
         if: matrix.platform == 'windows-x86_64'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: TheMrMilchmann/setup-msvc-dev@368ef7d1ee4d1171b31d4a7f67f4d954f903f5a9 # v4.1.0
+        with:
+          arch: x64
 
       - name: Install Qt on Windows
         if: matrix.platform == 'windows-x86_64'
@@ -264,7 +266,7 @@ jobs:
             lerc:p graphite2:p libwebp:p libtiff:p brotli:p ccache:p
 
       - name: Cache CPM downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .cache/cpm
           key: cpm-${{ runner.os }}-${{ hashFiles('cpmfile.json', 'CMakeLists.txt', 'src/**/CMakeLists.txt') }}
@@ -281,7 +283,7 @@ jobs:
       # The double dash separates the platform from the run id. It prevents a shorter platform
       # name from matching a longer one. Each run saves a fresh cache.
       - name: Restore compiler objects
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             .ccache
@@ -431,7 +433,7 @@ jobs:
       # This also runs after a failed build. The next run then compiles only what is not done.
       - name: Save compiler objects
         if: ${{ !cancelled() }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             .ccache
@@ -564,7 +566,7 @@ jobs:
       # zip gave a zip inside a zip. The release job zips it once for the release.
       - name: Upload Windows binary
         if: matrix.platform == 'windows-x86_64'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: eglantine-${{ matrix.platform }}-${{ github.sha }}
           path: build/release/bin/
@@ -573,7 +575,7 @@ jobs:
 
       - name: Upload MinGW binary
         if: matrix.mingw
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: eglantine-${{ matrix.platform }}-${{ github.sha }}
           path: build/release/bin/
@@ -583,7 +585,7 @@ jobs:
       # Both Linux files go in one artifact: the tar.gz and the AppImage.
       - name: Upload Linux binary
         if: startsWith(matrix.platform, 'linux')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: eglantine-${{ matrix.platform }}-${{ github.sha }}
           path: |
@@ -595,7 +597,7 @@ jobs:
 
       - name: Upload macOS binary
         if: startsWith(matrix.platform, 'macos')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: eglantine-${{ matrix.platform }}-${{ github.sha }}
           path: eglantine-${{ github.sha }}-${{ matrix.platform }}.dmg
@@ -683,7 +685,7 @@ jobs:
       contents: write
     steps:
       - name: Download binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: eglantine-*-${{ github.sha }}
           path: artifacts

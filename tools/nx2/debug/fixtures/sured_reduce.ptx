@@ -1,0 +1,23 @@
+// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+.version 8.5
+.target sm_50
+.address_size 64
+
+.visible .entry reduce(
+    .param .u64 surface,
+    .param .u32 x,
+    .param .u32 y,
+    .param .u32 value
+)
+{
+    .reg .b64 %rd<2>;
+    .reg .b32 %r<4>;
+    ld.param.u64 %rd0, [surface];
+    ld.param.u32 %r0, [x];
+    ld.param.u32 %r1, [y];
+    ld.param.u32 %r2, [value];
+    sured.p.add.2d.b32.zero [%rd0, {%r0, %r1}], %r2;
+    ret;
+}

@@ -12,10 +12,10 @@
 namespace AudioCore {
 
 AudioManager::AudioManager() {
+    events.ClearEvents();
     thread = std::jthread([this](std::stop_token stop_token) {
         Common::SetCurrentThreadName("AudioManager");
         std::unique_lock l{events.GetAudioEventLock()};
-        events.ClearEvents();
         while (!stop_token.stop_requested()) {
             const auto timed_out{events.Wait(l, std::chrono::seconds(2))};
             if (events.CheckAudioEventSet(Event::Type::Max)) {
@@ -23,12 +23,17 @@ AudioManager::AudioManager() {
             }
             for (size_t i = 0; i < buffer_events.size(); i++) {
                 const auto event_type = Event::Type(i);
-                if (events.CheckAudioEventSet(event_type) || timed_out) {
-                    if (buffer_events[i]) {
-                        buffer_events[i]();
+                const bool signalled = events.ConsumeAudioEvent(event_type);
+                if (signalled || timed_out) {
+                    BufferEventFunc callback;
+                    {
+                        std::scoped_lock callback_lock{lock};
+                        callback = buffer_events[i];
+                    }
+                    if (callback) {
+                        callback();
                     }
                 }
-                events.SetAudioEvent(event_type, false);
             }
         }
     });
@@ -68,6 +73,12 @@ Result AudioManager::SetInManager(BufferEventFunc buffer_func) {
         return ResultSuccess;
     }
     return Service::Audio::ResultOperationFailed;
+}
+
+void AudioManager::ClearManager(const Event::Type type) {
+    // The manager thread holds the event lock whenever it runs a callback.
+    std::scoped_lock l{lock, events.GetAudioEventLock()};
+    buffer_events[events.GetManagerIndex(type)] = nullptr;
 }
 
 void AudioManager::SetEvent(const Event::Type type, const bool signalled) {

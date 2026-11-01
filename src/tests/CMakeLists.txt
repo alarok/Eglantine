@@ -5,9 +5,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 add_executable(tests
+    audio_core/audio_manager.cpp
+    audio_core/null_sink.cpp
+    audio_core/session_lifetime.cpp
     common/bit_field.cpp
     common/cityhash.cpp
     common/container_hash.cpp
+    common/event.cpp
     common/fibers.cpp
     common/fs_iterate.cpp
     common/host_memory.cpp
@@ -19,6 +23,7 @@ add_executable(tests
     common/undefined_fix.cpp
     common/unique_function.cpp
     core/core_timing.cpp
+    core/file_sys/ips_layer.cpp
     core/gpu_dirty_memory_manager.cpp
     core/internal_network/network.cpp
     core/loader/loose_dump_sidecars.cpp
@@ -27,6 +32,7 @@ add_executable(tests
     video_core/ampere_returns.cpp
     video_core/ampere_translator.cpp
     video_core/pipeline_disk_cache.cpp
+    video_core/usage_tracker.cpp
     input_common/calibration_configuration_job.cpp
 )
 

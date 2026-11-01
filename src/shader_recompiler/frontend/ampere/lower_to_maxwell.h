@@ -1,4 +1,6 @@
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic ignored "-Wshadow"
+#endif
 // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Encoding reference: Mesa NAK sm70_encode.rs (MIT), Copyright 2022 Collabora, Ltd.
@@ -703,7 +705,7 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code) {
             emit(0x38e8000000070000ULL | 254 | (u64{255} << 8) | (u64{0x7f} << 20));
             emit(0x38f0000000070000ULL | (u64{239} << 8) | (u64{0x7f} << 20));
             predicate_lut(lut, slot(insn.Bits(87, 4)), slot(insn.Bits(77, 4)), slot(insn.Bits(68, 4)), 6 - target);
-            emit(0x38e8000000070000ULL | 239 | (u64{239} << 8) | (u64{1U << (6 - target)} << 20));
+            emit(0x38e8000000070000ULL | 239 | (u64{239} << 8) | (u64{1} << (6 - target) << 20));
             emit(0x38f0000000070000ULL | (u64{254} << 8) | (u64{0x7f} << 20));
             break;
         }
@@ -1282,7 +1284,7 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code) {
             emit(0x5b60000000070000ULL | 7 | (u64{temporary} << 3) |
                 (u64{a} << 8) | (u64{b} << 20) | (u64{combine_slot} << 39) | (u64{insn.Bits(90, 1)} << 42) |
                 (u64{combine_op} << 45) | (u64{insn.Bits(73, 1)} << 48) | (u64{insn.Bits(76, 3)} << 49));
-            emit(0x38e8000000070000ULL | 239 | (u64{239} << 8) | (u64{1U << temporary} << 20));
+            emit(0x38e8000000070000ULL | 239 | (u64{239} << 8) | (u64{1} << temporary << 20));
             emit(0x38f0000000070000ULL | (u64{253} << 8) | (u64{mask} << 20));
             break;
         }
@@ -2001,7 +2003,8 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code) {
         }
         case 0x306: case 0xd06: { // I2F.F32.U8, low byte, round-to-nearest (0xd06: uniform source)
             const u32 source = opcode == 0xd06 ? uniform_register(insn.Bits(32, 8)) : insn.Bits(32, 8);
-            if (opcode == 0x306 && insn.words[2] == 0x00101000 && !(insn.words[1] & 0xcfffff00U)) {
+            if (opcode == 0x306 && insn.words[2] == 0x00101000 &&
+                !(insn.words[1] & 0xcfffff00U) && insn.Bits(60, 2) <= 1) {
                 // I2F.U16 Rd, Rs(.H1): Maxwell's 16-bit source format, byte selector 0 or 2.
                 emit(base(0x5cb8000000000000ULL) | (u64{2} << 8) | (u64{1} << 10) | (u64{source} << 20) |
                      (u64{insn.Bits(60, 2) * 2} << 41));

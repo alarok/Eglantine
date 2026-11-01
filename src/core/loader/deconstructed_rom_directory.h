@@ -58,8 +58,16 @@ public:
     ResultStatus ReadNSOModules(Modules& out_modules) override;
 
 private:
+    /// Returns the RomFS of this dump, and indexes it on the first call. A game list scan builds
+    /// an AppLoader for every candidate, and indexing a large dump walks every file of romfs/, so
+    /// the walk waits until a caller asks for the RomFS.
+    FileSys::VirtualFile BuildRomFS();
+
     FileSys::ProgramMetadata metadata;
-    FileSys::VirtualFile romfs;
+    FileSys::VirtualFile romfs_file; ///< The .romfs file next to main, if the dump holds one
+    FileSys::VirtualDir romfs_dir;   ///< The romfs/ directory next to exefs/, if the dump holds one
+    FileSys::VirtualFile romfs;      ///< The indexed RomFS, built by BuildRomFS()
+    bool romfs_built{};
     FileSys::VirtualDir dir;
 
     std::vector<u8> icon_data;

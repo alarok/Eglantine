@@ -52,6 +52,11 @@ public:
     bool CheckAudioEventSet(Type type) const;
 
     /**
+     * Consume an event and return its previous state.
+     */
+    bool ConsumeAudioEvent(Type type);
+
+    /**
      * Get the lock for audio events.
      *
      * @return Reference to the lock.
@@ -83,6 +88,8 @@ public:
 private:
     /// Lock, used by the audio manager
     std::mutex event_lock;
+    /// Serializes event changes with the wait predicate.
+    std::mutex notification_mutex;
     /// Array of events, one per system type (see Type), last event is used to terminate
     std::array<std::atomic<bool>, 4> events_signalled;
     /// Event to signal the audio manager

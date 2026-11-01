@@ -533,6 +533,14 @@ public:
         return image_handle;
     }
 
+    [[nodiscard]] u32 HostBaseMipLevel() const noexcept {
+        return host_base_mip_level;
+    }
+
+    [[nodiscard]] u32 HostMipLevelCount() const noexcept {
+        return host_mip_level_count;
+    }
+
     [[nodiscard]] VkImageView RenderTarget() const noexcept {
         return render_target;
     }
@@ -590,6 +598,8 @@ private:
     vk::Image null_image;
     VkImage image_handle = VK_NULL_HANDLE;
     VkImageView render_target = VK_NULL_HANDLE;
+    u32 host_base_mip_level = 0;
+    u32 host_mip_level_count = 1;
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
     u32 buffer_size = 0;
 

@@ -4,6 +4,9 @@ These scripts help to debug the Switch 2 (NX2) emulator offline.
 Most of them read a log or a capture file. They do not start the emulator.
 Only `play.ps1` and `matrix.py` start it.
 
+`isberd_review.md` records the known ISBERD field overlap and the limits of upstream PR #173.
+`sured_review.md` records the rejected compute reduction and an independent PTX encoding fixture.
+
 ## Rules for tests
 
 - Use an isolated profile for each test run. `matrix.py` makes one.
@@ -92,7 +95,7 @@ The first line of a capture holds the reason. Each next line is one pushbuffer e
 
 ## Log tools
 
-- `logdiff.py`: use it to compare two runs. It shows error line counts, frame times, census totals and lost shader stores.
+- `logdiff.py`: use it to compare two runs. It shows errors, native shader rejections by opcode, frame times, census totals and lost shader stores. Rejection lines do not count failed draws.
   `python logdiff.py <run-a-log> <run-b-log>`
 - `session.ps1`: use it for a quick summary of one log: error counts, last frame times and GPU memory.
   `powershell -File session.ps1 -Log <eden_log.txt>`

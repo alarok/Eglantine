@@ -79,8 +79,8 @@ namespace {
     }
     return VkImageSubresourceRange{
         .aspectMask = AspectMaskFromFormat(image_view.format),
-        .baseMipLevel = static_cast<u32>(range.base.level),
-        .levelCount = static_cast<u32>(range.extent.levels),
+        .baseMipLevel = image_view.HostBaseMipLevel(),
+        .levelCount = image_view.HostMipLevelCount(),
         .baseArrayLayer = static_cast<u32>(range.base.layer),
         .layerCount = static_cast<u32>(range.extent.layers),
     };
@@ -478,9 +478,13 @@ void TransitionImageLayout(vk::CommandBuffer& cmdbuf, VkImage image, VkImageLayo
                            0, barrier);
 }
 
-void RecordShaderReadBarrier(Scheduler& scheduler, const ImageView& image_view) {
+void RecordShaderReadBarrier(Scheduler& scheduler, const ImageView& image_view,
+                             bool single_layer = false) {
     const VkImage image = image_view.ImageHandle();
-    const VkImageSubresourceRange subresource_range = SubresourceRangeFromView(image_view);
+    VkImageSubresourceRange subresource_range = SubresourceRangeFromView(image_view);
+    if (single_layer) {
+        subresource_range.layerCount = 1;
+    }
     scheduler.RequestOutsideRenderPassOperationContext();
     scheduler.Record([image, subresource_range](vk::CommandBuffer cmdbuf) {
         const VkImageMemoryBarrier barrier{
@@ -641,7 +645,9 @@ BlitImageHelper::BlitImageHelper(const Device& device_, Scheduler& scheduler_,
       convert_msaa_to_non_msaa_depth_frag(
           BuildShader(device, CONVERT_MSAA_TO_NON_MSAA_DEPTH_FRAG_SPV)),
       convert_msaa_to_non_msaa_depth_stencil_frag(
-          BuildShader(device, CONVERT_MSAA_TO_NON_MSAA_DEPTH_STENCIL_FRAG_SPV)),
+          device.IsExtShaderStencilExportSupported()
+              ? BuildShader(device, CONVERT_MSAA_TO_NON_MSAA_DEPTH_STENCIL_FRAG_SPV)
+              : vk::ShaderModule{}),
       convert_non_msaa_to_msaa_frag(BuildShader(device, CONVERT_NON_MSAA_TO_MSAA_FRAG_SPV)),
       convert_non_msaa_to_msaa_sint_frag(
           BuildShader(device, CONVERT_NON_MSAA_TO_MSAA_SINT_FRAG_SPV)),
@@ -702,20 +708,33 @@ void BlitImageHelper::BlitColor(const Framebuffer* dst_framebuffer, VkImageView 
     });
 }
 
+void BlitImageHelper::BlitColor(const Framebuffer* dst_framebuffer, const ImageView& src_image_view,
+                                VkSampler src_sampler, const Region2D& dst_region,
+                                const Region2D& src_region, const Extent3D& src_size) {
+    const BlitImagePipelineKey key{
+        .renderpass = dst_framebuffer->RenderPass(),
+        .operation = Tegra::Engines::Fermi2D::Operation::SrcCopy,
+    };
+    BlitImpl(dst_framebuffer, src_image_view, dst_region, src_region,
+             FindOrEmplaceColorPipeline(key), src_sampler,
+             src_image_view.Handle(Shader::TextureType::Color2D), VK_NULL_HANDLE, false, src_size,
+             true);
+}
+
 void BlitImageHelper::BlitImpl(const Framebuffer* dst_framebuffer,
                                const ImageView& src_image_view, const Region2D& dst_region,
                                const Region2D& src_region, VkPipeline pipeline, VkSampler sampler,
                                VkImageView src_view, VkImageView src_stencil_view,
-                               bool blit_stencil) {
+                               bool blit_stencil, const Extent3D& src_size, bool single_layer) {
     VkPipelineLayout layout = *one_texture_pipeline_layout;
     if (blit_stencil) {
         layout = *two_textures_pipeline_layout;
     }
 
-    RecordShaderReadBarrier(scheduler, src_image_view);
+    RecordShaderReadBarrier(scheduler, src_image_view, single_layer);
     scheduler.RequestRenderpass(dst_framebuffer);
     scheduler.Record([this, dst_region, src_region, pipeline, layout, sampler, src_view,
-                      src_stencil_view, blit_stencil](vk::CommandBuffer cmdbuf) {
+                      src_stencil_view, blit_stencil, src_size](vk::CommandBuffer cmdbuf) {
         VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
         if (blit_stencil) {
             descriptor_set = two_textures_descriptor_allocator.Commit();
@@ -728,7 +747,7 @@ void BlitImageHelper::BlitImpl(const Framebuffer* dst_framebuffer,
         cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         cmdbuf.BindDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, descriptor_set,
                                   nullptr);
-        BindBlitState(cmdbuf, layout, dst_region, src_region);
+        BindBlitState(cmdbuf, layout, dst_region, src_region, src_size);
         cmdbuf.Draw(3, 1, 0, 0);
     });
     scheduler.InvalidateState();

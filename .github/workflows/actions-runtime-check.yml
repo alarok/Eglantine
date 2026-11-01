@@ -1,0 +1,100 @@
+name: Actions runtime check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  produce:
+    name: Check actions on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: TheMrMilchmann/setup-msvc-dev@368ef7d1ee4d1171b31d4a7f67f4d954f903f5a9 # v4.1.0
+        with:
+          arch: x64
+      - name: Compile with MSVC
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-Content -Path runtime-check.cpp -Value 'int main() { return 0; }'
+          cl.exe /nologo runtime-check.cpp /Fe:runtime-check.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .\runtime-check.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check combined cache
+        if: runner.os == 'Linux'
+        uses: actions/cache@v5
+        with:
+          path: node24-combined.txt
+          key: node24-combined-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Create marker
+        shell: bash
+        run: |
+          mkdir -p runtime-check
+          printf '%s\n' "$RUNNER_OS" > runtime-check/marker.txt
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            printf 'combined\n' > node24-combined.txt
+          fi
+      - name: Save marker cache
+        uses: actions/cache/save@v5
+        with:
+          path: runtime-check/marker.txt
+          key: node24-marker-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Remove marker
+        shell: bash
+        run: python -c "from pathlib import Path; Path('runtime-check/marker.txt').unlink()"
+      - name: Restore marker cache
+        uses: actions/cache/restore@v5
+        with:
+          path: runtime-check/marker.txt
+          key: node24-marker-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          fail-on-cache-miss: true
+      - name: Check restored marker
+        shell: bash
+        run: |
+          test "$(cat runtime-check/marker.txt)" = "$RUNNER_OS"
+      - name: Upload marker
+        uses: actions/upload-artifact@v6
+        with:
+          name: node24-${{ runner.os }}
+          path: runtime-check/marker.txt
+          if-no-files-found: error
+
+  consume:
+    name: Check downloaded artifacts
+    needs: produce
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download markers
+        uses: actions/download-artifact@v7
+        with:
+          pattern: node24-*
+          path: artifacts
+      - name: Restore combined cache
+        uses: actions/cache/restore@v5
+        with:
+          path: node24-combined.txt
+          key: node24-combined-${{ github.run_id }}-${{ github.run_attempt }}
+          fail-on-cache-miss: true
+      - name: Check markers
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          for name in ('Linux', 'Windows', 'macOS'):
+              actual = (Path('artifacts') / f'node24-{name}' / 'marker.txt').read_text().strip()
+              if actual != name:
+                  raise SystemExit(f'{name}: unexpected marker {actual!r}')
+          if Path('node24-combined.txt').read_text().strip() != 'combined':
+              raise SystemExit('Combined cache did not restore its marker')
+          PY

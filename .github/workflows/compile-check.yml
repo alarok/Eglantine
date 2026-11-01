@@ -42,7 +42,7 @@ jobs:
       LLVM_VERSION: '23'
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Linux dependencies
         run: |
@@ -79,7 +79,7 @@ jobs:
           cache: true
 
       - name: Cache CPM downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .cache/cpm
           key: cpm-${{ runner.os }}-${{ hashFiles('cpmfile.json', 'CMakeLists.txt', 'src/**/CMakeLists.txt') }}
@@ -87,7 +87,7 @@ jobs:
             cpm-${{ runner.os }}-
 
       - name: Restore compiler objects
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .ccache
           key: check-linux-${{ matrix.compiler }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -130,7 +130,7 @@ jobs:
 
       - name: Save compiler objects
         if: ${{ !cancelled() }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: .ccache
           key: check-linux-${{ matrix.compiler }}-${{ github.run_id }}-${{ github.run_attempt }}

@@ -174,11 +174,28 @@ Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. P
 | `gui_settings_runs.ps1 -Label <l> -Variants <v> -Seconds <n>` | Bananza from Deku's save point. The log is `<l>-bananza-c\<v>\user\log\eden_log.txt`, the sheet is `<l>-bananza-c\thumbs.png`. |
 | `regress_run.ps1 -Label <l> -Game <mkw-c or pokopia> -Variant <v> -Item <item or none>` | Another game, with an A/B inside the run. It has the GPU profile on. |
 | `mkw_race.ps1 -Exe <exe> -Label <l> [-Seconds 300]` | A driven race of Mario Kart World: the taps reach the first Grand Prix race, and A stays down from 126 s. Smart steering drives two laps. The log is `<l>-mkw-c\seed-acc0-nr\user\log\eden_log.txt`. The kart in `seed-acc0` runs stays at the start line, so use this script for race numbers. Two equal runs differ by 2.7 ms, because the race changes each time. So compare builds with more than one run each. |
+| `mkw_race_guarded.ps1` | Run the same race with `matrix_guarded.py`. It requires 50 GiB of commit headroom and stops its own emulator below 8 GiB. |
+| `stub_log_report.py <before> <after>` | Compare auto-stub reports in two logs. It checks that shared commands do not produce critical assertions or duplicate warnings after the change. |
 | `race_series.ps1 race5=<exe> race6=<exe> ...`, `race_means.py <label> ...`, `race_stalls.py <label> ...` | Run a series of races and print the mean frame time after 140 s, the stalls and the draws per picture. The folder of each exe goes first on `PATH`, so a CI build finds its DLLs. |
 | `matrix.py` | Defines the variants. `owner-cold` is Deku's settings with an empty cache, `seed-acc0` is Fast, `seed` is Accurate. |
 | `halo_run.ps1`, `camera_run.ps1` + `camera_report.py`, `rdoc_run.ps1` | Halo count, camera sweep, read a RenderDoc capture. |
+| `quad-probe/README.md` | Headless Vulkan validation for quad control and stencil export. The probe uses local build libraries and does not run a game. |
+| `sparse-fixture/README.md`, `sparse-opaque-control/README.md` | Reproduce the first sparse depth write without a game. The opaque control binds the whole image and is not a scalable fix. |
+| `sparse-layer-control/README.md` | Test a D16 sparse layer bind, depth clear and readback on the RTX 4080. Other formats, mip initialization and shader sampling remain untested. |
+| `sparse-layer-repeat-agent/README.md` | Test zero-initialized D16 mipmaps, a partial clear and a second layer bind. The probe binds memory directly and does not test the production cache path. |
+| `drawtexture-cache-probe/README.md` | Replay deferred texture invalidation with Application-pool memory, the Vulkan cache and blitter. The probe does not call `DrawTexture` itself. |
+| `drawtexture-full-probe/README.md` | Test `DrawManager::DrawTexture` and the Vulkan rasterizer with safe guest memory. The probe does not decode a guest pushbuffer or run a game. |
+| `ubo-safe-probe/README.md` | Test GPU-written uniform bindings with Application-pool memory, including mixed writes and two snapshots in one tick. The Android branch is simulated on Windows. |
+| `framegen-widget-probe/README.md` | Test frame generation settings with Qt widgets offscreen. The probe does not open the full dialog or save an INI file. |
+| `framegen-dialog-probe/README.md` | Test the graphics settings tab and global and per-game INI reload in a new isolated profile. The probe does not run a game. |
+| `audio-lifetime-session-probe/README.md` | Test stopped input and output sessions after their manager's external owner closes. The probe does not start audio hardware. |
+| `synthetic-boot-probe/README.md` | Load a generated NRO with the Null renderer and sink. Test shutdown with a pending applet in a portable profile. |
+| `audio-started-close-probe/README.md` | Close started input and output services with a Null sink and a retained event. The probe does not queue buffers. |
+| `audio-wake-probe/README.md` | Force the audio event signal between the wait predicate and sleep. The probe uses an instrumented source overlay. |
 
 Debug tools in Git are in `tools/nx2/debug/`, with a README. The skill `nx2-debug-tools` gives the method.
+
+The early UBO, sparse depth and DrawTexture probes used fixed raw DeviceMemory offsets after kernel initialization. Those offsets can overlap kernel slabs and corrupt the probe. Treat their results as provisional until repeated with pages allocated from the Application pool. The safe mapping control is in `D:/DEV/tmp/egl-ubo-crash-investigation`.
 
 ## How to get a fair result
 
@@ -221,6 +238,13 @@ Traps on the console:
 
 ## Open faults on 2026-10-31
 
+- Native `WARPSYNC` currently lowers to a no-op. Its memory-order and divergent-lane behavior need a shader test before this can be treated as correct.
+- Upstream PR #173 drops `ISBEWR` writes and maps `ISBERD` modes beyond the existing map-read case. Do not assume those writes are harmless or that the mapped modes preserve their semantics.
+- Queued input and output sessions close with the Null sink after its capture buffer fix. SDL/WASAPI output also closes with queued buffers. Real input remains untested. The local probe is `D:/DEV/egl-compare/audio-queued-close-probe`.
+- The Vulkan `DrawTexture` path for non-2D sources still uses the old raw blit. Integer and multisampled sources and source/destination feedback need tests. The 2D probe does not run a game.
+- Mario Kart build 32 logged a lost first GPU write to an `UnwrittenSparse` depth array and an `UNIMPLEMENTED` assertion. The run continued. Promoting the image during render-target lookup can invalidate sampled views that the pipeline already collected. Test an array view and a render-target layer used in the same draw before changing that order.
+- Do not route depth images to `SparseLayers` without handling initialization, metadata, mip tails and GPU-written data at eviction. `IsDownloadable` currently excludes unbacked images. The D16 layer probe does not test those paths.
+- Without `VK_EXT_shader_stencil_export`, copies between images with different sample counts can copy depth without stencil. A clean shader-module validation does not prove that stencil was copied.
 - Black 3D view in Bananza. 99.95% of the 3D area is exactly 0, and the HUD stays. On the console with build 27: GPU High with asynchronous GPU gave 6 of 12 and 11 of 14 black captures. GPU Low gave 0 of 56 with asynchronous GPU and 0 of 56 without it. Which GPU-written value the guest reads is not known. Asynchronous shaders and BC3 are not the required cause.
 - The old PC run `amd1-bananza-c` also has black captures. Its log reports `Generic31Y` pipeline errors and over 180,000 failed draws per 2 s. The newer `amd3-bananza-c` executable has neither that error nor black captures. These runs do not prove that the current console fault occurs on the PC.
 - NS2 `69debf7d` is a semaphore visibility candidate. `GpuSplit::Drain` waits for the back thread, not GPU completion. Trace the release, real GPU fence, callback, and macro read before forwarding a pending payload.
