@@ -179,6 +179,7 @@ Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. P
 | `halo_run.ps1`, `camera_run.ps1` + `camera_report.py`, `rdoc_run.ps1` | Halo count, camera sweep, read a RenderDoc capture. |
 | `quad-probe/README.md` | Headless Vulkan validation for quad control and stencil export. The probe uses local build libraries and does not run a game. |
 | `sparse-fixture/README.md`, `sparse-opaque-control/README.md` | Reproduce the first sparse depth write without a game. The opaque control binds the whole image and is not a scalable fix. |
+| `sparse-layer-control/README.md` | Test a D16 sparse layer bind, depth clear and readback on the RTX 4080. Other formats, mip initialization and shader sampling remain untested. |
 
 Debug tools in Git are in `tools/nx2/debug/`, with a README. The skill `nx2-debug-tools` gives the method.
 
