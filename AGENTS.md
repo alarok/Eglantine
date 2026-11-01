@@ -15,7 +15,8 @@ Reply to Deku in clear Spanish from Spain.
 - Keep pushes disabled for `upstream` and reference forks.
 - The default branch is `nx2`.
 - The primary checkout is `C:/Users/Usuario/DEV/Eglantine`.
-- The integration worktree is `D:/DEV/egl-gui`. Its branch is `codex/integrate-1031`, and it builds to `D:/DEV/egl-gui-build`.
+- The integration worktree is `D:/DEV/egl-gui`. Its branch is `codex/integrate-1031`.
+- Select its build folder with `EGL_BUILD_DIR`. The fallback on `D:` is `D:/DEV/egl-sdl-check`.
 - `C:/egl-mkw` is a Codex worktree. Do not edit it. The build scripts use its `artifacts/build-tools/bin`.
 - **Only `alarok` pushes, opens pull requests, and publishes releases in this repository.** Never use `deku-95` here.
 - `deku-95` is Deku's primary account, for other projects. Use it here only if Deku asks.
@@ -143,13 +144,25 @@ The PC has an RTX 4080. Deku plays with the GUI (`eglantine.exe`), not the CLI. 
 
 - Before a build or a run, look for `eglantine`, `eden-cli` and `ninja`. Run one heavy job at a time. Stop only your own processes, by PID.
 - Keep temporary files, run folders and builds on `D:` or `E:`, and set `TEMP=D:\DEV\tmp`. Check the free space on `D:` first. A full disk breaks runs.
+- Set `EGL_BUILD_DIR` explicitly. The local build script defaults to `E:\DEV\egl-gui-build`, which was unavailable on 2026-11-01.
+- A CMake build folder records its original absolute path. Configure a fresh folder instead of moving an existing build.
 - `C:\egl-games` holds the games for Deku. Do not delete it.
 - Build at low priority, from PowerShell, with no source edit during the build:
   ```powershell
-  $env:TEMP='D:\DEV\tmp'; cmd /c "start `"`" /belownormal /wait /b cmd /c `"D:\DEV\egl-compare\build-gui-tip.cmd D:\DEV\egl-gui`" > D:\DEV\tmp\build.log 2>&1"
+  $env:TEMP='D:\DEV\tmp'
+  $env:EGL_BUILD_DIR='D:\DEV\egl-sdl-check'
+  $build = Start-Process cmd.exe -ArgumentList '/c','D:\DEV\egl-compare\build-gui-tip.cmd','D:\DEV\egl-gui' `
+      -WindowStyle Hidden -RedirectStandardOutput D:\DEV\tmp\build.log `
+      -RedirectStandardError D:\DEV\tmp\build.err -PassThru
+  $build.PriorityClass = 'BelowNormal'
+  $build.WaitForExit()
+  $build.Refresh()
+  if ($build.ExitCode -ne 0) { throw "Build failed: $($build.ExitCode)" }
   ```
-- The output is `D:\DEV\egl-gui-build\bin`. Build again before you open the GUI for Deku, because a local binary can hold a temporary log.
-- Check before a push: `python -B tools/nx2/clang_check.py D:/DEV/egl-gui-build --base <ref> --only <file> -j 4`.
+- A `cmd start /wait` wrapper can return zero when the build did not finish. Check the process exit code and the build log.
+- The output is in the selected build folder under `bin`. Pass `--configure` to the script for a new folder.
+- Build again before you open the GUI for Deku, because a local binary can hold a temporary log.
+- Check before a push: `python -B tools/nx2/clang_check.py <build dir> --base <ref> --only <file> -j 4`.
 - Push with a bounded retry. `getaddrinfo` errors come and go.
 
 Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. Pass emulator variables with `$env:MATRIX_EXTRA_ENV='A=1;B=2'`, and clear it after the run.
@@ -207,6 +220,8 @@ Traps on the console:
 ## Open faults on 2026-10-31
 
 - Black 3D view in Bananza. 99.95% of the 3D area is exactly 0, and the HUD stays. On the console with build 27: GPU High with asynchronous GPU gave 6 of 12 and 11 of 14 black captures. GPU Low gave 0 of 56 with asynchronous GPU and 0 of 56 without it. Which GPU-written value the guest reads is not known. Asynchronous shaders and BC3 are not the required cause.
+- The old PC run `amd1-bananza-c` also has black captures. Its log reports `Generic31Y` pipeline errors and over 180,000 failed draws per 2 s. The newer `amd3-bananza-c` executable has neither that error nor black captures. These runs do not prove that the current console fault occurs on the PC.
+- NS2 `69debf7d` is a semaphore visibility candidate. `GpuSplit::Drain` waits for the back thread, not GPU completion. Trace the release, real GPU fence, callback, and macro read before forwarding a pending payload.
 - Mario Kart World colliders under read traps: the rail on Dino Dino Jungle needs a person to check. Tests stop at the start line, so a driven race is not measured.
 - Reactive flushing off has no test on Switch 1 titles.
 - Bananza handheld crop, frozen movie panel on the console, halos on the console, and the hang when the game stops.
