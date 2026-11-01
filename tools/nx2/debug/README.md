@@ -11,6 +11,26 @@ Only `play.ps1` and `matrix.py` start it.
 - Never copy a real `qt-config.ini`. `matrix.py` writes its own `probe.ini` and copies no config file.
 - Keep temporary files and run folders off the system drive.
 
+## Profiling one thread
+
+- `rip_sampler.py <exe> <thread> <exe-with-pdb> <pdb-dir> [delay-s] [seconds] [hz]` samples the
+  instruction pointer of one thread and prints the modules, the functions and three buckets:
+  blocking wait, spin, and the rest. It loads symbols for every module, including `ntdll.dll` and
+  `win32u.dll` from the Microsoft symbol server, so a system wait gets a name instead of a module.
+  It needs the dbghelp of the Debugging Tools folder (set `DBGHELP_DIR`) and `symsrv.dll` beside it;
+  the dbghelp of Windows cannot download. Cache: `SYM_CACHE`.
+  It prints samples per symbol and does not unwind, so it cannot say which of our functions called
+  a wait.
+- `stack_sampler.py <exe> <thread> <pdb-dir> [delay-s] [seconds] [hz]` walks the stack with
+  `StackWalk64` while the thread is suspended, so it reports exclusive and inclusive time per
+  function, and which of our functions was on the stack under a system wait. Use it for a question
+  like "who calls Sleep". It is slower, so use a lower rate.
+- `thread_cpu.ps1 [-ProcessName eden-cli] [-Delay 0] [-Window 70]` prints the CPU seconds per wall
+  second of the whole process and the thread ids above 5 % of one core. It names no thread.
+
+Two traps found with these tools: an interval counted as "work" can be a spin (`GpuSplit::Drain`),
+and a percentage of samples is not a share of the frame time.
+
 ## Environment variables of the emulator
 
 - `EDEN_NX2_PB_CAPTURE=<file>` writes a pushbuffer capture. The emulator writes it at the first sign of a broken stream.
