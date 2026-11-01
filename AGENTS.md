@@ -183,7 +183,7 @@ Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. P
 | `sparse-layer-repeat-agent/README.md` | Test zero-initialized D16 mipmaps, a partial clear and a second layer bind. The probe binds memory directly and does not test the production cache path. |
 | `drawtexture-cache-probe/README.md` | Replay deferred texture invalidation with Application-pool memory, the Vulkan cache and blitter. The probe does not call `DrawTexture` itself. |
 | `ubo-safe-probe/README.md` | Test GPU-written uniform bindings with Application-pool memory, including mixed writes and two snapshots in one tick. The Android branch is simulated on Windows. |
-| `framegen-widget-probe/README.md` | Reproduce conflicting frame generation checkbox writes with Qt widgets offscreen. The probe does not open the full dialog or save an INI file. |
+| `framegen-widget-probe/README.md` | Test frame generation settings with Qt widgets offscreen. The probe does not open the full dialog or save an INI file. |
 
 Debug tools in Git are in `tools/nx2/debug/`, with a README. The skill `nx2-debug-tools` gives the method.
 
@@ -230,7 +230,6 @@ Traps on the console:
 
 ## Open faults on 2026-10-31
 
-- The Qt frame generation settings have multiple checkboxes that write the same value. A widget probe reproduces the lost change for global and per-game settings. Upstream PR #112 alone does not fix it.
 - Native `WARPSYNC` currently lowers to a no-op. Its memory-order and divergent-lane behavior need a shader test before this can be treated as correct.
 - Mario Kart build 32 logged a lost first GPU write to an `UnwrittenSparse` depth array and an `UNIMPLEMENTED` assertion. The run continued. Promoting the image during render-target lookup can invalidate sampled views that the pipeline already collected. Test an array view and a render-target layer used in the same draw before changing that order.
 - Do not route depth images to `SparseLayers` without handling initialization, metadata, mip tails and GPU-written data at eviction. `IsDownloadable` currently excludes unbacked images. The D16 layer probe does not test those paths.

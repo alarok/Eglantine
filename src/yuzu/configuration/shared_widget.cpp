@@ -517,6 +517,10 @@ void Widget::SetupComponent(const QString& label, std::function<void()>& load_fu
     if (other_setting == nullptr) {
         other_setting = setting.PairedSetting();
     }
+    // The frame generation toggle has its own widget.
+    if (other_setting == &Settings::values.frame_gen) {
+        other_setting = nullptr;
+    }
 
     const bool require_checkbox = other_setting != nullptr && other_setting->TypeId() == "bool";
     if (other_setting != nullptr && other_setting->TypeId() != "bool") {
