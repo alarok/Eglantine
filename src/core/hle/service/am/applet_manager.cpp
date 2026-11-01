@@ -241,6 +241,14 @@ void AppletManager::CreateAndInsertByFrontendAppletParameters(
     m_cv.notify_all();
 }
 
+void AppletManager::ClearPendingProcess() {
+    std::unique_ptr<Process> pending;
+    {
+        std::scoped_lock lk{m_lock};
+        pending = std::move(m_pending_process);
+    }
+}
+
 void AppletManager::RequestExit() {
     std::scoped_lock lk{m_lock};
     if (m_window_system) {

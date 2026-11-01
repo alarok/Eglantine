@@ -455,6 +455,7 @@ struct System::Impl {
         kernel.ShutdownCores();
         services.reset();
         service_manager.reset();
+        applet_manager.ClearPendingProcess();
         fs_controller.Reset();
         cheat_engine.reset();
         core_timing.ClearPendingEvents();
