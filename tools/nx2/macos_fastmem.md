@@ -26,10 +26,16 @@ fix needs, and one trap that a first design got wrong.
 `src/core/device_memory.cpp` reserves 1<<38 bytes (256 GiB) of virtual space when NCE is available
 and 1<<39 otherwise.
 
-## Why the arena must be complete
+## Holes fault, and that is the recovery path
 
-There is no SIGSEGV handler for a guest access in the fastmem path. A hole inside the arena is a
-crash, not a slow access.
+Dynarmic installs its own `EXC_BAD_ACCESS` handler on macOS
+(`src/dynarmic/src/dynarmic/backend/exception_handler_macos.cpp`). A fastmem access into an
+unmapped granule faults there, and the backend invalidates that block and recompiles it without
+fastmem, so the access is served from the page table instead. That is what makes the granule holes
+usable: the measured build with holes ran, it was only slow.
+
+The price is per access site: one hole can slow every load and store compiled against it until the
+block is recompiled, and the invalidation has to stay synchronised with the executors.
 
 ## What a first design got wrong
 
