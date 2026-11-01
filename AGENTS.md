@@ -145,6 +145,7 @@ The PC has an RTX 4080. Deku plays with the GUI (`eglantine.exe`), not the CLI. 
 - Before a build or a run, look for `eglantine`, `eden-cli` and `ninja`. Run one heavy job at a time. Stop only your own processes, by PID.
 - Keep temporary files, run folders and builds on `D:` or `E:`, and set `TEMP=D:\DEV\tmp`. Check the free space on `D:` first. A full disk breaks runs.
 - Check commit headroom before a game run. On 2026-11-01, Mario Kart used 23.9 GiB of private memory and left 0.6 GiB of commit headroom. We stopped the test at the grid. Free physical RAM did not show the risk.
+- The Windows NX2 backing section commits 20 GiB at startup. The old `d1dd9bd9c2` lazy-commit draft is untested and affects Switch 1 too. Its exception handler can interfere with fastmem protection. Do not run its `too_large` test: it attempts real commit exhaustion. Redesign and validate the failure paths before integration.
 - Set `EGL_BUILD_DIR` explicitly. The local build script defaults to `E:\DEV\egl-gui-build`, which was unavailable on 2026-11-01.
 - A CMake build folder records its original absolute path. Configure a fresh folder instead of moving an existing build.
 - `C:\egl-games` holds the games for Deku. Do not delete it.
