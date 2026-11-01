@@ -76,24 +76,30 @@ struct PatchCollection {
 
 namespace {
 
-// RomFS for a loose ExeFS: the first .romfs file next to main, else a romfs/ directory next to
-// the exefs/ directory (the usual layout of an extracted title).
-FileSys::VirtualFile FindLooseRomFS(const FileSys::VirtualDir& exefs_dir) {
+// The source of a loose ExeFS RomFS: the first .romfs file next to main, else a romfs/ directory
+// next to the exefs/ directory (the usual layout of an extracted title). The directory is not
+// indexed here. See AppLoader_DeconstructedRomDirectory::BuildRomFS.
+struct LooseRomFSSource {
+    FileSys::VirtualFile file;
+    FileSys::VirtualDir directory;
+};
+
+LooseRomFSSource FindLooseRomFS(const FileSys::VirtualDir& exefs_dir) {
     if (exefs_dir == nullptr) {
-        return nullptr;
+        return {};
     }
     for (const auto& f : exefs_dir->GetFiles()) {
         if (f->GetExtension() == "romfs") {
-            return f;
+            return {f, nullptr};
         }
     }
     if (const auto parent = exefs_dir->GetParentDirectory()) {
         if (const auto romfs_dir = parent->GetSubdirectory("romfs")) {
             LOG_INFO(Loader, "Using RomFS directory next to the ExeFS");
-            return FileSys::CreateRomFS(romfs_dir);
+            return {nullptr, romfs_dir};
         }
     }
-    return nullptr;
+    return {};
 }
 
 // The display version of a dump without control data, from its RomFS: Nintendo EPD titles name
@@ -243,7 +249,9 @@ AppLoader_DeconstructedRomDirectory::AppLoader_DeconstructedRomDirectory(FileSys
         }
     }
 
-    romfs = FindLooseRomFS(file_dir);
+    const auto loose_romfs = FindLooseRomFS(file_dir);
+    romfs_file = loose_romfs.file;
+    romfs_dir = loose_romfs.directory;
     if (const auto title_dir = file_dir->GetParentDirectory()) {
         romfs_version = RomFSProductVersion(title_dir->GetSubdirectory("romfs"));
     }
@@ -255,7 +263,22 @@ AppLoader_DeconstructedRomDirectory::AppLoader_DeconstructedRomDirectory(
     , dir(std::move(directory))
     , override_update(override_update_)
 {
-    romfs = FindLooseRomFS(dir);
+    const auto loose_romfs = FindLooseRomFS(dir);
+    romfs_file = loose_romfs.file;
+    romfs_dir = loose_romfs.directory;
+}
+
+FileSys::VirtualFile AppLoader_DeconstructedRomDirectory::BuildRomFS() {
+    if (romfs_built) {
+        return romfs;
+    }
+    romfs_built = true;
+    if (romfs_file != nullptr) {
+        romfs = romfs_file;
+    } else if (romfs_dir != nullptr) {
+        romfs = FileSys::CreateRomFS(romfs_dir);
+    }
+    return romfs;
 }
 
 FileType AppLoader_DeconstructedRomDirectory::IdentifyType(const FileSys::VirtualFile& dir_file) {
@@ -314,7 +337,7 @@ AppLoader_DeconstructedRomDirectory::LoadResult AppLoader_DeconstructedRomDirect
 
     // Loose-ExeFS loads bypass the NCA/NSP loaders, which are the ones that normally apply
     // LayeredFS to the RomFS; apply it here so mods in user/load/<titleid>/ work too.
-    if (romfs != nullptr) {
+    if (BuildRomFS() != nullptr) {
         const FileSys::PatchManager patch_manager(metadata.GetTitleID(),
                                                   system.GetFileSystemController(),
                                                   system.GetContentProvider());
@@ -424,7 +447,7 @@ AppLoader_DeconstructedRomDirectory::LoadResult AppLoader_DeconstructedRomDirect
 }
 
 ResultStatus AppLoader_DeconstructedRomDirectory::ReadRomFS(FileSys::VirtualFile& out_dir) {
-    if (romfs == nullptr) {
+    if (BuildRomFS() == nullptr) {
         return ResultStatus::ErrorNoRomFS;
     }
 

@@ -93,3 +93,32 @@ TEST_CASE("A base dump ignores sidecars above its game folder", "[loader]") {
     std::vector<u8> icon;
     REQUIRE(loader.ReadIcon(icon) == Loader::ResultStatus::ErrorNoIcon);
 }
+
+TEST_CASE("A base dump finds its RomFS next to the ExeFS", "[loader]") {
+    const TempDir temp;
+    const auto game = temp.root / "Some Game";
+    WriteFile(game / "base" / "romfs" / "data.bin", "romfs bytes");
+
+    FileSys::RealVfsFilesystem vfs;
+    auto loader = OpenLoader(vfs, game / "base" / "exefs" / "main");
+
+    // The game list builds this loader for every candidate and needs only the title, so the
+    // RomFS is indexed on the first caller that asks for it.
+    std::string title;
+    REQUIRE(loader.ReadTitle(title) == Loader::ResultStatus::ErrorNoControl);
+
+    FileSys::VirtualFile romfs;
+    REQUIRE(loader.ReadRomFS(romfs) == Loader::ResultStatus::Success);
+    REQUIRE(romfs != nullptr);
+}
+
+TEST_CASE("A base dump without a RomFS reports that it has none", "[loader]") {
+    const TempDir temp;
+    const auto game = temp.root / "Some Game";
+
+    FileSys::RealVfsFilesystem vfs;
+    auto loader = OpenLoader(vfs, game / "base" / "exefs" / "main");
+
+    FileSys::VirtualFile romfs;
+    REQUIRE(loader.ReadRomFS(romfs) == Loader::ResultStatus::ErrorNoRomFS);
+}
