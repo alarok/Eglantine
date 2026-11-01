@@ -4767,8 +4767,16 @@ void MainWindow::UpdateUITheme() {
     QFile f(theme_uri);
     if (f.open(QFile::ReadOnly | QFile::Text)) {
         QTextStream ts(&f);
-        qApp->setStyleSheet(ts.readAll());
-        setStyleSheet(ts.readAll());
+        QString style = ts.readAll();
+#if defined(__APPLE__)
+        // The themes set a 19 px minimum height on the text controls. The macOS font needs more
+        // room than that, so a combo box clipped the bottom half of its text and of the label next
+        // to it. Derive the height from the font instead of a fixed figure.
+        style += QStringLiteral("QComboBox, QAbstractSpinBox { min-height: %1px; }\n")
+                     .arg(fontMetrics().height() + 10);
+#endif
+        qApp->setStyleSheet(style);
+        setStyleSheet(style);
     } else {
         LOG_ERROR(Frontend, "Unable to set style \"{}\", stylesheet file not found",
                   UISettings::values.theme);
