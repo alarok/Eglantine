@@ -27,6 +27,7 @@ add_executable(tests
     video_core/ampere_returns.cpp
     video_core/ampere_translator.cpp
     video_core/pipeline_disk_cache.cpp
+    video_core/usage_tracker.cpp
     input_common/calibration_configuration_job.cpp
 )
 
