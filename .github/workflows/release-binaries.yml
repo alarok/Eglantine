@@ -121,6 +121,13 @@ jobs:
           - platform: macos-arm64
             runner: macos-15
             experimental: true
+          # The same Mac build against Eden's PGO profile. Apple Clang reads a .profdata file, so
+          # this job keeps the system compiler and adds only the profile flags. A profile from a
+          # newer LLVM can be rejected; this job fails on its own and does not stop the release.
+          - platform: macos-arm64-pgo
+            runner: macos-15
+            pgo: true
+            experimental: true
 
     steps:
       - name: Check out source
@@ -379,20 +386,30 @@ jobs:
       - name: Configure macOS
         if: startsWith(matrix.platform, 'macos')
         shell: bash
-        run: >-
-          cmake -S . -B build/release -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DBUILD_TESTING=OFF
-          -DYUZU_TESTS=OFF
-          -DYUZU_CMD=ON
-          -DYUZU_ROOM=OFF
-          -DYUZU_ROOM_STANDALONE=OFF
-          -DYUZU_USE_BUNDLED_QT=OFF
-          "-DCMAKE_PREFIX_PATH=$(brew --prefix qt@6);$(brew --prefix)"
-          -DENABLE_UPDATE_CHECKER=OFF
-          -DUSE_DISCORD_PRESENCE=OFF
-          -DUSE_CCACHE=ON
-          -DENABLE_WERROR=OFF
+        run: |
+          set -euo pipefail
+          flags=(
+            -DCMAKE_BUILD_TYPE=Release
+            -DBUILD_TESTING=OFF
+            -DYUZU_TESTS=OFF
+            -DYUZU_CMD=ON
+            -DYUZU_ROOM=OFF
+            -DYUZU_ROOM_STANDALONE=OFF
+            -DYUZU_USE_BUNDLED_QT=OFF
+            "-DCMAKE_PREFIX_PATH=$(brew --prefix qt@6);$(brew --prefix)"
+            -DENABLE_UPDATE_CHECKER=OFF
+            -DUSE_DISCORD_PRESENCE=OFF
+            -DUSE_CCACHE=ON
+            -DENABLE_WERROR=OFF
+          )
+          if [ '${{ matrix.pgo }}' = 'true' ]; then
+            profile="-fprofile-use=$PWD/eden.profdata -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
+            flags+=(
+              "-DCMAKE_C_FLAGS=$profile"
+              "-DCMAKE_CXX_FLAGS=$profile"
+            )
+          fi
+          cmake -S . -B build/release -G Ninja "${flags[@]}"
 
       - name: Build
         if: ${{ ! matrix.mingw }}
