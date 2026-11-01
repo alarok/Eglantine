@@ -588,7 +588,9 @@ bool QueryCacheBase<Traits>::SemiFlushQueryDirty(QueryCacheBase<Traits>::QueryLo
     if (!query_base) {
         return false;
     }
-    if (True(query_base->flags & QueryFlagBits::IsFinalValueSynced) &&
+    // Host query callbacks must apply accumulation before guest memory receives the result.
+    if (False(query_base->flags & QueryFlagBits::IsHostManaged) &&
+        True(query_base->flags & QueryFlagBits::IsFinalValueSynced) &&
         False(query_base->flags & QueryFlagBits::IsGuestSynced)) {
         auto* ptr = impl->device_memory.template GetPointer<u8>(query_base->guest_address);
         if (True(query_base->flags & QueryFlagBits::HasTimestamp)) {
