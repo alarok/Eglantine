@@ -17,13 +17,7 @@ CircularBufferSinkInfo::CircularBufferSinkInfo() {
 }
 
 void CircularBufferSinkInfo::CleanUp() {
-    auto state_{reinterpret_cast<DeviceState*>(state.data())};
-
-    if (state_->upsampler_info) {
-        state_->upsampler_info->manager->Free(state_->upsampler_info);
-        state_->upsampler_info = nullptr;
-    }
-
+    state.fill(0);
     parameter.fill(0);
     type = Type::Invalid;
 }
