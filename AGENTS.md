@@ -185,6 +185,8 @@ Test scripts are in `D:\DEV\egl-compare`. They are local and hold local paths. P
 
 Debug tools in Git are in `tools/nx2/debug/`, with a README. The skill `nx2-debug-tools` gives the method.
 
+The early UBO, sparse depth and DrawTexture probes used fixed raw DeviceMemory offsets after kernel initialization. Those offsets can overlap kernel slabs and corrupt the probe. Treat their results as provisional until repeated with pages allocated from the Application pool. The safe mapping control is in `D:/DEV/tmp/egl-ubo-crash-investigation`.
+
 ## How to get a fair result
 
 - **Read the log first.** Search for `<Error>` and `Draw skipped` before you make a theory. The floor fault of 2026-10-31 had one error line in each log, and we found it late.
