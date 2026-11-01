@@ -52,6 +52,11 @@ public:
     bool CheckAudioEventSet(Type type) const;
 
     /**
+     * Consume an event and return its previous state.
+     */
+    bool ConsumeAudioEvent(Type type);
+
+    /**
      * Get the lock for audio events.
      *
      * @return Reference to the lock.

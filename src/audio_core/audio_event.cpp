@@ -36,6 +36,10 @@ bool Event::CheckAudioEventSet(const Type type) const {
     return events_signalled[GetManagerIndex(type)];
 }
 
+bool Event::ConsumeAudioEvent(const Type type) {
+    return events_signalled[GetManagerIndex(type)].exchange(false);
+}
+
 std::mutex& Event::GetAudioEventLock() {
     return event_lock;
 }
