@@ -231,6 +231,7 @@ Traps on the console:
 ## Open faults on 2026-10-31
 
 - Native `WARPSYNC` currently lowers to a no-op. Its memory-order and divergent-lane behavior need a shader test before this can be treated as correct.
+- The Vulkan `DrawTexture` blit passes a 2D-array view to a 2D shader and uses conflicting image layouts. `drawtexture-cache-probe/raw-current-baseline.status.json` reproduces validation errors with safe memory. The probe does not call `DrawTexture` itself.
 - Mario Kart build 32 logged a lost first GPU write to an `UnwrittenSparse` depth array and an `UNIMPLEMENTED` assertion. The run continued. Promoting the image during render-target lookup can invalidate sampled views that the pipeline already collected. Test an array view and a render-target layer used in the same draw before changing that order.
 - Do not route depth images to `SparseLayers` without handling initialization, metadata, mip tails and GPU-written data at eviction. `IsDownloadable` currently excludes unbacked images. The D16 layer probe does not test those paths.
 - Without `VK_EXT_shader_stencil_export`, copies between images with different sample counts can copy depth without stencil. A clean shader-module validation does not prove that stencil was copied.
